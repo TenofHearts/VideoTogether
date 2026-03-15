@@ -1,0 +1,17 @@
+node_modules
+dist
+build
+.vite
+.turbo
+.DS_Store
+*.log
+*.tsbuildinfo
+coverage
+storage/hls/*
+storage/media/*
+storage/subtitles/*
+storage/temp/*
+storage/db/*.db
+apps/desktop/src-tauri/target
+apps/desktop/src-tauri/gen
+.env

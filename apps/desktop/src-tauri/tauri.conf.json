@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VideoShare",
+  "version": "0.1.0",
+  "identifier": "com.videoshare.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev --workspace @videoshare/desktop",
+    "beforeBuildCommand": "npm run build --workspace @videoshare/desktop",
+    "devUrl": "http://localhost:4200",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "VideoShare Host",
+        "width": 1280,
+        "height": 860,
+        "resizable": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
+

@@ -1,0 +1,25 @@
+services:
+  app-server:
+    build:
+      context: ..
+      dockerfile: apps/server/Dockerfile
+    ports:
+      - '3000:3000'
+    env_file:
+      - ../.env.example
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATABASE_URL: file:/app/storage/db/app.db
+      PUBLIC_BASE_URL: http://localhost:3000
+      WEB_ORIGIN: http://localhost:5173
+      HLS_OUTPUT_DIR: /app/storage/hls
+      MEDIA_INPUT_DIR: /app/storage/media
+      SUBTITLE_DIR: /app/storage/subtitles
+      TEMP_DIR: /app/storage/temp
+    volumes:
+      - ../storage/media:/app/storage/media
+      - ../storage/hls:/app/storage/hls
+      - ../storage/subtitles:/app/storage/subtitles
+      - ../storage/db:/app/storage/db
+      - ../storage/temp:/app/storage/temp
