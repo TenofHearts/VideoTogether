@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import type { DatabaseContext } from '../db/database.js';
 import type { AppEnv } from '../config/env.js';
+import type { DatabaseContext } from '../db/database.js';
 import { HttpError } from '../lib/errors.js';
 import type { MediaService } from './media-service.js';
 
@@ -9,6 +9,9 @@ import type {
   CreateRoomRequest,
   JoinRoomRequest,
   Participant,
+  PlaybackCommandPayload,
+  PlaybackResyncMode,
+  PlaybackStateReportPayload,
   Room,
   RoomJoinResponse,
   RoomLookupResponse
@@ -39,6 +42,28 @@ type ParticipantRow = {
   socket_id: string | null;
   connection_state: Participant['connectionState'];
 };
+
+type PlaybackMutationKind = 'play' | 'pause' | 'seek';
+
+type PlaybackMutationResult = {
+  roomToken: string;
+  participant: Participant;
+  room: Room;
+  response: RoomLookupResponse;
+};
+
+type PlaybackDriftResult = {
+  roomToken: string;
+  participant: Participant;
+  room: Room;
+  driftMs: number;
+  shouldResync: boolean;
+  mode: PlaybackResyncMode | null;
+};
+
+const HARD_RESYNC_THRESHOLD_MS = 1500;
+const SOFT_RESYNC_THRESHOLD_MS = 500;
+const PAUSED_RESYNC_THRESHOLD_MS = 250;
 
 function mapRoom(row: RoomRow): Room {
   return {
@@ -82,6 +107,10 @@ function normalizeDisplayName(value: string | null | undefined, fallback: string
   }
 
   return trimmed.slice(0, 48);
+}
+
+function roundPlaybackTime(value: number): number {
+  return Math.round(Math.max(0, value) * 1000) / 1000;
 }
 
 export type RoomService = ReturnType<typeof createRoomService>;
@@ -152,15 +181,23 @@ export function createRoomService(
 
   const updateRoomSubtitleStatement = database.connection.prepare(`
     UPDATE rooms
-    SET
-      active_subtitle_id = ?,
-      last_state_updated_at = ?
+    SET active_subtitle_id = ?
     WHERE token = ?
   `);
 
   const updateRoomHostStatement = database.connection.prepare(`
     UPDATE rooms
     SET host_client_id = ?
+    WHERE id = ?
+  `);
+
+  const updateRoomPlaybackStatement = database.connection.prepare(`
+    UPDATE rooms
+    SET
+      current_playback_time = ?,
+      playback_state = ?,
+      playback_rate = ?,
+      last_state_updated_at = ?
     WHERE id = ?
   `);
 
@@ -283,6 +320,113 @@ export function createRoomService(
     return row ? mapParticipant(row) : null;
   }
 
+  function getRoomDurationSeconds(room: Room): number | null {
+    if (!room.activeMediaId) {
+      return null;
+    }
+
+    const media = mediaService.getMediaById(room.activeMediaId);
+
+    if (!media?.durationMs || media.durationMs <= 0) {
+      return null;
+    }
+
+    return media.durationMs / 1000;
+  }
+
+  function clampPlaybackTime(value: number, durationSeconds: number | null): number {
+    const roundedTime = roundPlaybackTime(value);
+
+    if (durationSeconds === null) {
+      return roundedTime;
+    }
+
+    return Math.min(roundedTime, roundPlaybackTime(durationSeconds));
+  }
+
+  function getCanonicalPlaybackTime(room: Room, nowMs = Date.now()): number {
+    const durationSeconds = getRoomDurationSeconds(room);
+
+    if (room.playbackState !== 'playing') {
+      return clampPlaybackTime(room.currentPlaybackTime, durationSeconds);
+    }
+
+    const updatedAtMs = Date.parse(room.lastStateUpdatedAt);
+    const elapsedSeconds = Number.isNaN(updatedAtMs)
+      ? 0
+      : Math.max(0, nowMs - updatedAtMs) / 1000;
+
+    return clampPlaybackTime(
+      room.currentPlaybackTime + elapsedSeconds * room.playbackRate,
+      durationSeconds
+    );
+  }
+
+  function normalizePlaybackState(
+    playbackState: Room['playbackState'],
+    currentPlaybackTime: number,
+    durationSeconds: number | null
+  ): Room['playbackState'] {
+    if (durationSeconds !== null && currentPlaybackTime >= roundPlaybackTime(durationSeconds)) {
+      return 'paused';
+    }
+
+    return playbackState;
+  }
+
+  function persistPlaybackState(
+    room: Room,
+    input: {
+      currentPlaybackTime: number;
+      playbackState: Room['playbackState'];
+      playbackRate: number;
+      lastStateUpdatedAt: string;
+    }
+  ): Room {
+    const durationSeconds = getRoomDurationSeconds(room);
+    const currentPlaybackTime = clampPlaybackTime(input.currentPlaybackTime, durationSeconds);
+    const playbackState = normalizePlaybackState(
+      input.playbackState,
+      currentPlaybackTime,
+      durationSeconds
+    );
+    const playbackRate = input.playbackRate > 0 ? input.playbackRate : 1;
+
+    updateRoomPlaybackStatement.run(
+      currentPlaybackTime,
+      playbackState,
+      playbackRate,
+      input.lastStateUpdatedAt,
+      room.id
+    );
+
+    return {
+      ...room,
+      currentPlaybackTime,
+      playbackState,
+      playbackRate,
+      lastStateUpdatedAt: input.lastStateUpdatedAt
+    };
+  }
+
+  function requireReadyMediaForPlayback(room: Room) {
+    if (!room.activeMediaId) {
+      throw new HttpError(409, 'Room has no active media');
+    }
+
+    const media = mediaService.getMediaById(room.activeMediaId);
+
+    if (!media) {
+      throw new HttpError(404, 'Room media not found');
+    }
+
+    if (media.status !== 'ready' || !media.hlsManifestPath) {
+      throw new HttpError(409, 'Room media is not ready for synchronized playback');
+    }
+
+    return media;
+  }
+
   function buildRoomLookupResponse(room: Room): RoomLookupResponse {
     const media = room.activeMediaId
       ? mediaService.getMediaById(room.activeMediaId)
@@ -366,6 +510,41 @@ export function createRoomService(
     }
 
     return participant;
+  }
+
+  function updatePlayback(
+    token: string,
+    participantId: string,
+    input: PlaybackCommandPayload,
+    kind: PlaybackMutationKind
+  ): PlaybackMutationResult {
+    const room = getValidatedRoom(token);
+    const participant = requireParticipantForRoom(participantId, room.id);
+
+    requireReadyMediaForPlayback(room);
+
+    const now = new Date().toISOString();
+    const playbackRate = input.playbackRate && input.playbackRate > 0
+      ? input.playbackRate
+      : room.playbackRate;
+    const updatedRoom = persistPlaybackState(room, {
+      currentPlaybackTime: input.currentTime,
+      playbackState:
+        kind === 'play'
+          ? 'playing'
+          : kind === 'pause'
+            ? 'paused'
+            : room.playbackState,
+      playbackRate,
+      lastStateUpdatedAt: now
+    });
+
+    return {
+      roomToken: room.token,
+      participant,
+      room: updatedRoom,
+      response: buildRoomLookupResponse(updatedRoom)
+    };
   }
 
   return {
@@ -516,13 +695,11 @@ export function createRoomService(
         }
       }
 
-      const updatedAt = new Date().toISOString();
-      updateRoomSubtitleStatement.run(activeSubtitleId, updatedAt, token);
+      updateRoomSubtitleStatement.run(activeSubtitleId, token);
 
       return buildRoomLookupResponse({
         ...room,
-        activeSubtitleId,
-        lastStateUpdatedAt: updatedAt
+        activeSubtitleId
       });
     },
 
@@ -555,6 +732,59 @@ export function createRoomService(
       return getParticipantById(participant.id) ?? {
         ...participant,
         lastSeenAt: now
+      };
+    },
+
+    play(token: string, participantId: string, input: PlaybackCommandPayload): PlaybackMutationResult {
+      return updatePlayback(token, participantId, input, 'play');
+    },
+
+    pause(token: string, participantId: string, input: PlaybackCommandPayload): PlaybackMutationResult {
+      return updatePlayback(token, participantId, input, 'pause');
+    },
+
+    seek(token: string, participantId: string, input: PlaybackCommandPayload): PlaybackMutationResult {
+      return updatePlayback(token, participantId, input, 'seek');
+    },
+
+    reportPlaybackState(
+      token: string,
+      participantId: string,
+      input: PlaybackStateReportPayload
+    ): PlaybackDriftResult {
+      const room = getValidatedRoom(token);
+      const participant = requireParticipantForRoom(participantId, room.id);
+
+      requireReadyMediaForPlayback(room);
+
+      const durationSeconds = getRoomDurationSeconds(room);
+      const reportedTime = clampPlaybackTime(input.currentTime, durationSeconds);
+      const canonicalTime = getCanonicalPlaybackTime(room);
+      const driftMs = Math.round((canonicalTime - reportedTime) * 1000);
+      const stateMismatch = input.playbackState !== room.playbackState;
+      const rateMismatch = typeof input.playbackRate === 'number'
+        && Math.abs(input.playbackRate - room.playbackRate) > 0.05;
+      const absoluteDriftMs = Math.abs(driftMs);
+
+      let mode: PlaybackResyncMode | null = null;
+
+      if (stateMismatch || rateMismatch) {
+        mode = 'hard';
+      } else if (room.playbackState === 'paused' && absoluteDriftMs >= PAUSED_RESYNC_THRESHOLD_MS) {
+        mode = 'hard';
+      } else if (absoluteDriftMs >= HARD_RESYNC_THRESHOLD_MS) {
+        mode = 'hard';
+      } else if (absoluteDriftMs >= SOFT_RESYNC_THRESHOLD_MS) {
+        mode = 'soft';
+      }
+
+      return {
+        roomToken: room.token,
+        participant,
+        room,
+        driftMs,
+        shouldResync: mode !== null,
+        mode
       };
     },
 

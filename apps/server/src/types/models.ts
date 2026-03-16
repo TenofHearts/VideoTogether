@@ -7,6 +7,8 @@ export type ServiceHealth = {
 
 export type PlaybackState = 'paused' | 'playing';
 
+export type PlaybackResyncMode = 'soft' | 'hard';
+
 export type RoomStatus = 'active' | 'closed' | 'expired';
 
 export type MediaStatus = 'pending' | 'processing' | 'ready' | 'error';
@@ -94,6 +96,31 @@ export type RoomLookupResponse = {
 
 export type RoomJoinResponse = RoomLookupResponse & {
   participant: Participant;
+};
+
+export type PlaybackCommandPayload = {
+  token: string;
+  participantId: string;
+  currentTime: number;
+  playbackRate?: number;
+};
+
+export type PlaybackStateReportPayload = PlaybackCommandPayload & {
+  playbackState: PlaybackState;
+};
+
+export type PlaybackUpdateEvent = {
+  room: Room;
+  sourceParticipantId: string | null;
+  reason: 'play' | 'pause' | 'seek';
+  issuedAt: string;
+};
+
+export type PlaybackResyncEvent = {
+  room: Room;
+  mode: PlaybackResyncMode;
+  driftMs: number;
+  issuedAt: string;
 };
 
 export type MediaOperationResponse = {

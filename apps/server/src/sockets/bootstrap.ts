@@ -1,12 +1,17 @@
 import { z } from 'zod';
-import { Server } from 'socket.io';
 import type { FastifyInstance } from 'fastify';
+import { Server } from 'socket.io';
 
 import type { AppEnv } from '../config/env.js';
 import { HttpError } from '../lib/errors.js';
 import { isAllowedBrowserOrigin } from '../lib/origins.js';
 import type { RoomService } from '../services/room-service.js';
-import type { SystemStatus } from '../types/models.js';
+import type {
+  PlaybackResyncEvent,
+  PlaybackStateReportPayload,
+  PlaybackUpdateEvent,
+  SystemStatus
+} from '../types/models.js';
 
 type RealtimeStatus = SystemStatus['realtime'];
 
@@ -22,6 +27,17 @@ const roomJoinEventSchema = z.object({
 const participantHeartbeatSchema = z.object({
   token: z.string().min(1),
   participantId: z.string().uuid()
+});
+
+const playbackCommandSchema = z.object({
+  token: z.string().min(1),
+  participantId: z.string().uuid(),
+  currentTime: z.number().finite().nonnegative(),
+  playbackRate: z.number().positive().optional()
+});
+
+const playbackStateReportSchema = playbackCommandSchema.extend({
+  playbackState: z.enum(['paused', 'playing'])
 });
 
 function toSocketErrorPayload(error: unknown, event: string) {
@@ -73,6 +89,49 @@ export async function bootstrapRealtime(
       message: 'VideoShare realtime ready'
     });
 
+    function requireSocketSession(token: string, participantId: string) {
+      const activeToken = socket.data.roomToken as string | undefined;
+      const activeParticipantId = socket.data.participantId as string | undefined;
+
+      if (activeToken !== token || activeParticipantId !== participantId) {
+        throw new HttpError(403, 'Socket session is not joined to this participant');
+      }
+    }
+
+    function emitPlaybackUpdate(roomToken: string, payload: PlaybackUpdateEvent) {
+      io.to(roomToken).emit('playback:update', payload);
+    }
+
+    function emitPlaybackResync(payload: PlaybackResyncEvent) {
+      socket.emit('playback:resync', payload);
+    }
+
+    function registerPlaybackMutationHandler(
+      eventName: 'playback:play' | 'playback:pause' | 'playback:seek',
+      handler: RoomService['play']
+    ) {
+      socket.on(eventName, (rawPayload: unknown) => {
+        try {
+          const payload = playbackCommandSchema.parse(rawPayload);
+          requireSocketSession(payload.token, payload.participantId);
+
+          const result = handler(payload.token, payload.participantId, payload);
+          emitPlaybackUpdate(payload.token, {
+            room: result.room,
+            sourceParticipantId: result.participant.id,
+            reason: eventName === 'playback:play'
+              ? 'play'
+              : eventName === 'playback:pause'
+                ? 'pause'
+                : 'seek',
+            issuedAt: result.room.lastStateUpdatedAt
+          });
+        } catch (error) {
+          socket.emit('system:error', toSocketErrorPayload(error, eventName));
+        }
+      });
+    }
+
     socket.on('room:join', (rawPayload: unknown) => {
       try {
         const payload = roomJoinEventSchema.parse(rawPayload);
@@ -107,9 +166,44 @@ export async function bootstrapRealtime(
     socket.on('participant:heartbeat', (rawPayload: unknown) => {
       try {
         const payload = participantHeartbeatSchema.parse(rawPayload);
+        requireSocketSession(payload.token, payload.participantId);
         dependencies.roomService.touchParticipant(payload.token, payload.participantId);
       } catch (error) {
         socket.emit('system:error', toSocketErrorPayload(error, 'participant:heartbeat'));
+      }
+    });
+
+    registerPlaybackMutationHandler('playback:play', (token, participantId, payload) =>
+      dependencies.roomService.play(token, participantId, payload)
+    );
+    registerPlaybackMutationHandler('playback:pause', (token, participantId, payload) =>
+      dependencies.roomService.pause(token, participantId, payload)
+    );
+    registerPlaybackMutationHandler('playback:seek', (token, participantId, payload) =>
+      dependencies.roomService.seek(token, participantId, payload)
+    );
+
+    socket.on('playback:state-report', (rawPayload: unknown) => {
+      try {
+        const payload = playbackStateReportSchema.parse(rawPayload) as PlaybackStateReportPayload;
+        requireSocketSession(payload.token, payload.participantId);
+
+        const result = dependencies.roomService.reportPlaybackState(
+          payload.token,
+          payload.participantId,
+          payload
+        );
+
+        if (result.shouldResync && result.mode) {
+          emitPlaybackResync({
+            room: result.room,
+            mode: result.mode,
+            driftMs: result.driftMs,
+            issuedAt: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        socket.emit('system:error', toSocketErrorPayload(error, 'playback:state-report'));
       }
     });
 
@@ -156,3 +250,8 @@ export async function bootstrapRealtime(
     detail: 'Socket.IO server attached to the Fastify HTTP server'
   };
 }
+
+
+
+
+

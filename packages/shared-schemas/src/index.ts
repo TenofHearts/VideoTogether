@@ -9,6 +9,8 @@ export const serviceHealthSchema = z.object({
 
 export const playbackStateSchema = z.enum(['paused', 'playing']);
 
+export const playbackResyncModeSchema = z.enum(['soft', 'hard']);
+
 export const roomStatusSchema = z.enum(['active', 'closed', 'expired']);
 
 export const mediaStatusSchema = z.enum(['pending', 'processing', 'ready', 'error']);
@@ -96,6 +98,31 @@ export const roomLookupResponseSchema = z.object({
 
 export const roomJoinResponseSchema = roomLookupResponseSchema.extend({
   participant: participantSchema
+});
+
+export const playbackCommandPayloadSchema = z.object({
+  token: z.string().min(1),
+  participantId: z.string().uuid(),
+  currentTime: z.number().finite().nonnegative(),
+  playbackRate: z.number().positive().optional()
+});
+
+export const playbackStateReportPayloadSchema = playbackCommandPayloadSchema.extend({
+  playbackState: playbackStateSchema
+});
+
+export const playbackUpdateEventSchema = z.object({
+  room: roomSchema,
+  sourceParticipantId: z.string().uuid().nullable(),
+  reason: z.enum(['play', 'pause', 'seek']),
+  issuedAt: z.string().datetime()
+});
+
+export const playbackResyncEventSchema = z.object({
+  room: roomSchema,
+  mode: playbackResyncModeSchema,
+  driftMs: z.number().int(),
+  issuedAt: z.string().datetime()
 });
 
 export const mediaOperationResponseSchema = z.object({

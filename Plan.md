@@ -755,8 +755,27 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - reconnect restores session state
 - drift correction works
 
----
+### Progress Notes
+- status: completed
+- completed:
+  - shared playback sync DTOs and validation schemas added for command, state-report, update, and resync events
+  - server-side room playback state is now authoritative, with canonical time calculation, validated play/pause/seek updates, and ready-media guards
+  - Socket.IO realtime layer now handles `playback:play`, `playback:pause`, `playback:seek`, and `playback:state-report`, broadcasting room playback updates and targeted resync events
+  - browser room player now emits local play/pause/seek intents, applies canonical playback updates from the server, and suppresses local event loops during remote state application
+  - client heartbeat reporting now includes playback state drift checks, with soft and hard resync correction paths for reconnect and divergence recovery
+  - room playback UI now exposes shared sync status so users can see when playback is aligned, paused, or being corrected
+- verified:
+  - `npm run typecheck --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/server` passes
+  - `npm run build --workspace @videoshare/server` passes
+  - `npm run typecheck --workspace @videoshare/web` passes
+  - `npm run lint --workspace @videoshare/web` passes
+  - `npm run build --workspace @videoshare/web` passes on the host machine
+- acceptance completed on 2026-03-16:
+  - Phase 5 deliverables are considered done
+  - Phase 6 can start from the current repository state
 
+---
 ## Phase 6 — Host Dashboard in Tauri
 ### Goals
 - local dashboard for selected movie
@@ -934,6 +953,7 @@ The MVP is complete when all of the following are true:
 - implement browser-first remote experience even though host uses Tauri
 - design code so remote desktop app can be added later without major backend changes
 - only the server backend runs on Docker, the application itself may run on the local computer. 
+
 
 
 
