@@ -3,10 +3,19 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   DesktopStatus,
   Media,
-  MediaOperationResponse
+  MediaListResponse,
+  MediaOperationResponse,
+  RoomLookupResponse,
+  Subtitle,
+  SubtitleOperationResponse
 } from '@videoshare/shared-types';
 
 type UploadState = 'idle' | 'uploading' | 'error' | 'success';
+
+type RecentMediaState =
+  | { kind: 'loading'; data: Media[] }
+  | { kind: 'error'; data: Media[]; message: string }
+  | { kind: 'success'; data: Media[] };
 
 type TauriWindow = Window & {
   __TAURI_INTERNALS__?: unknown;
@@ -15,6 +24,8 @@ type TauriWindow = Window & {
 const fallbackStatus: DesktopStatus = {
   apiBaseUrl: 'http://localhost:3000',
   webUrl: 'http://localhost:5173',
+  lanApiBaseUrl: null,
+  lanWebUrl: null,
   tauri: 'ready'
 };
 
@@ -48,12 +59,42 @@ function getStatusText(status: Media['status']): string {
   }
 }
 
+function buildPlayerUrl(baseUrl: string, mediaId: string, roomToken?: string): string {
+  const url = new URL(baseUrl);
+  url.searchParams.set('mediaId', mediaId);
+
+  if (roomToken) {
+    url.searchParams.set('roomToken', roomToken);
+  }
+
+  return url.toString();
+}
+
+function formatImportedAt(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value));
+}
+
 export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const subtitleInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedSubtitleFile, setSelectedSubtitleFile] = useState<File | null>(null);
+  const [selectedRoomSubtitleId, setSelectedRoomSubtitleId] = useState<string | null>(null);
   const [media, setMedia] = useState<Media | null>(null);
+  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
+  const [room, setRoom] = useState<RoomLookupResponse | null>(null);
+  const [recentMedia, setRecentMedia] = useState<RecentMediaState>({
+    kind: 'loading',
+    data: []
+  });
   const [uploadState, setUploadState] = useState<UploadState>('idle');
+  const [subtitleUploadState, setSubtitleUploadState] = useState<UploadState>('idle');
+  const [roomState, setRoomState] = useState<UploadState>('idle');
+  const [roomSubtitleState, setRoomSubtitleState] = useState<UploadState>('idle');
   const [processingQueued, setProcessingQueued] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +133,49 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!status) {
+      return;
+    }
+
+    let cancelled = false;
+    const apiBaseUrl = status.apiBaseUrl;
+
+    async function loadRecentMedia() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/media`);
+
+        if (!response.ok) {
+          throw new Error(`Media list failed with ${response.status}`);
+        }
+
+        const payload = (await response.json()) as MediaListResponse;
+
+        if (!cancelled) {
+          setRecentMedia({ kind: 'success', data: payload.media });
+        }
+      } catch (reason) {
+        if (!cancelled) {
+          setRecentMedia((current) => ({
+            kind: 'error',
+            data: current.data,
+            message: reason instanceof Error ? reason.message : 'Failed to load recent media'
+          }));
+        }
+      }
+    }
+
+    void loadRecentMedia();
+    const timer = window.setInterval(() => {
+      void loadRecentMedia();
+    }, 15000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [status]);
 
   useEffect(() => {
     if (!status || !media || (media.status !== 'pending' && media.status !== 'processing')) {
@@ -135,11 +219,97 @@ export default function App() {
     };
   }, [status, media]);
 
-  const playerUrl = media && status ? `${status.webUrl}/?mediaId=${media.id}` : null;
+  useEffect(() => {
+    if (!status || !media) {
+      return;
+    }
+
+    let cancelled = false;
+    const apiBaseUrl = status.apiBaseUrl;
+    const mediaId = media.id;
+
+    async function loadSubtitles() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/media/${mediaId}/subtitles`);
+
+        if (!response.ok) {
+          throw new Error(`Subtitle lookup failed with ${response.status}`);
+        }
+
+        const payload = (await response.json()) as { subtitles: Subtitle[] };
+
+        if (!cancelled) {
+          setSubtitles(payload.subtitles);
+          setSelectedRoomSubtitleId((current) => current ?? payload.subtitles[0]?.id ?? null);
+        }
+      } catch (reason) {
+        if (!cancelled) {
+          setError(reason instanceof Error ? reason.message : 'Failed to load subtitles');
+        }
+      }
+    }
+
+    void loadSubtitles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, media]);
+
+  useEffect(() => {
+    setSelectedRoomSubtitleId(room?.room.activeSubtitleId ?? null);
+  }, [room]);
+
+  const playerUrl = media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
+  const lanPlayerUrl = media && status?.lanWebUrl
+    ? buildPlayerUrl(status.lanWebUrl, media.id)
+    : null;
+  const roomPlayerUrl = room && room.media && status
+    ? buildPlayerUrl(status.webUrl, room.media.id, room.room.token)
+    : null;
+  const lanRoomPlayerUrl = room && room.media && status?.lanWebUrl
+    ? buildPlayerUrl(status.lanWebUrl, room.media.id, room.room.token)
+    : null;
   const manifestUrl =
     media && status && media.hlsManifestPath
       ? `${status.apiBaseUrl}/media/${media.id}/${media.hlsManifestPath}`
       : null;
+  const lanManifestUrl =
+    media && status?.lanApiBaseUrl && media.hlsManifestPath
+      ? `${status.lanApiBaseUrl}/media/${media.id}/${media.hlsManifestPath}`
+      : null;
+
+  async function selectExistingMedia(mediaId: string) {
+    if (!status) {
+      return;
+    }
+
+    setError(null);
+    setMessage('Loading a previously uploaded media item from the server...');
+    setRoom(null);
+    setSubtitles([]);
+    setSelectedRoomSubtitleId(null);
+
+    try {
+      const response = await fetch(`${status.apiBaseUrl}/api/media/${mediaId}`);
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? `Media lookup failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as Media;
+      setMedia(payload);
+      setSelectedFile(null);
+      setProcessingQueued(false);
+      setUploadState(payload.status === 'error' ? 'error' : 'success');
+      setMessage('Loaded an existing media item from the server. You can create a room or add more subtitles without re-uploading the video.');
+    } catch (reason) {
+      setUploadState('error');
+      setError(reason instanceof Error ? reason.message : 'Failed to load existing media');
+      setMessage(null);
+    }
+  }
 
   async function uploadSelectedFile() {
     if (!selectedFile || !status) {
@@ -149,6 +319,9 @@ export default function App() {
     setUploadState('uploading');
     setError(null);
     setMessage('Uploading media to the local server...');
+    setRoom(null);
+    setSubtitles([]);
+    setSelectedRoomSubtitleId(null);
 
     try {
       const response = await fetch(`${status.apiBaseUrl}/api/media/import`, {
@@ -180,6 +353,123 @@ export default function App() {
       setUploadState('error');
       setError(reason instanceof Error ? reason.message : 'Upload failed');
       setMessage(null);
+    }
+  }
+
+  async function uploadSelectedSubtitle() {
+    if (!selectedSubtitleFile || !status || !media) {
+      return;
+    }
+
+    setSubtitleUploadState('uploading');
+    setError(null);
+    setMessage('Uploading subtitle and converting it to WebVTT when needed...');
+
+    try {
+      const response = await fetch(`${status.apiBaseUrl}/api/media/${media.id}/subtitles`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/octet-stream',
+          'X-File-Name': encodeURIComponent(selectedSubtitleFile.name)
+        },
+        body: selectedSubtitleFile
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { message?: string }
+          | null;
+        throw new Error(payload?.message ?? `Subtitle upload failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as SubtitleOperationResponse;
+      setSubtitles((current) => {
+        const next = [...current.filter((subtitle) => subtitle.id !== payload.subtitle.id), payload.subtitle];
+        next.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.label.localeCompare(right.label));
+        return next;
+      });
+      setSelectedRoomSubtitleId(payload.subtitle.id);
+      setSubtitleUploadState('success');
+      setMessage(`Subtitle ready: ${payload.subtitle.label} (${payload.subtitle.format} -> vtt)`);
+    } catch (reason) {
+      setSubtitleUploadState('error');
+      setError(reason instanceof Error ? reason.message : 'Subtitle upload failed');
+    }
+  }
+
+  async function createRoom() {
+    if (!status || !media) {
+      return;
+    }
+
+    setRoomState('uploading');
+    setError(null);
+    setMessage('Creating a shareable room for this media...');
+
+    try {
+      const defaultSubtitle = subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId)
+        ?? subtitles.find((subtitle) => subtitle.isDefault)
+        ?? subtitles[0]
+        ?? null;
+      const response = await fetch(`${status.apiBaseUrl}/api/rooms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          activeMediaId: media.id,
+          activeSubtitleId: defaultSubtitle?.id ?? null
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? `Room creation failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as RoomLookupResponse;
+      setRoom(payload);
+      setRoomState('success');
+      setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
+      setMessage('Room created. Share the room player URL with the second viewer.');
+    } catch (reason) {
+      setRoomState('error');
+      setError(reason instanceof Error ? reason.message : 'Room creation failed');
+    }
+  }
+
+  async function updateRoomSubtitle() {
+    if (!status || !room) {
+      return;
+    }
+
+    setRoomSubtitleState('uploading');
+    setError(null);
+    setMessage('Updating the room subtitle selection...');
+
+    try {
+      const response = await fetch(`${status.apiBaseUrl}/api/rooms/${room.room.token}/subtitle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          activeSubtitleId: selectedRoomSubtitleId
+        })
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? `Subtitle update failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as RoomLookupResponse;
+      setRoom(payload);
+      setRoomSubtitleState('success');
+      setMessage('Room subtitle selection updated.');
+    } catch (reason) {
+      setRoomSubtitleState('error');
+      setError(reason instanceof Error ? reason.message : 'Subtitle update failed');
     }
   }
 
@@ -233,12 +523,10 @@ export default function App() {
       <section className="panel">
         <div className="hero">
           <div>
-            <p className="eyebrow">Phase 2 Host Flow</p>
-            <h1>Import a local movie and kick off HLS processing from the desktop app.</h1>
+            <p className="eyebrow">Phase 3 Host Flow</p>
+            <h1>Import media, attach subtitles, and create a shared room from the desktop app.</h1>
             <p className="copy">
-              This host dashboard now uploads a selected file to the Fastify server,
-              starts ffprobe and FFmpeg processing, and gives you the preview URLs needed
-              for browser playback testing.
+              This dashboard now supports subtitle uploads in <span className="font-mono">.srt</span>, <span className="font-mono">.vtt</span>, and <span className="font-mono">.ass</span>, converts them to WebVTT for playback, and lets you update the room's active subtitle after the room is created.
             </p>
           </div>
 
@@ -253,12 +541,73 @@ export default function App() {
                 <dd>{status.webUrl}</dd>
               </div>
               <div>
+                <dt>LAN API</dt>
+                <dd>{status.lanApiBaseUrl ?? 'Unavailable'}</dd>
+              </div>
+              <div>
+                <dt>LAN Web</dt>
+                <dd>{status.lanWebUrl ?? 'Unavailable'}</dd>
+              </div>
+              <div>
                 <dt>Tauri</dt>
                 <dd>{status.tauri}</dd>
               </div>
             </dl>
           )}
         </div>
+
+        <section className="uploadPanel">
+          <div>
+            <p className="sectionEyebrow">Reuse media</p>
+            <h2>Create a room from previous uploads</h2>
+            <p className="sectionCopy">
+              Pick a media item that is already stored on the server. This lets you create a new room in a later session without uploading the video again.
+            </p>
+          </div>
+
+          {recentMedia.kind === 'loading' && (
+            <div className="fileSummary">
+              <p className="fileName">Loading recent media...</p>
+              <p className="fileMeta">Fetching previously uploaded videos from the server.</p>
+            </div>
+          )}
+
+          {recentMedia.kind === 'error' && (
+            <div className="fileSummary">
+              <p className="fileName">Could not load recent media</p>
+              <p className="fileMeta">{recentMedia.message}</p>
+            </div>
+          )}
+
+          {recentMedia.data.length > 0 && (
+            <div className="mediaQueue">
+              {recentMedia.data.map((item) => (
+                <button
+                  className={`mediaQueueItem${media?.id === item.id ? ' selected' : ''}`}
+                  key={item.id}
+                  onClick={() => {
+                    void selectExistingMedia(item.id);
+                  }}
+                  type="button"
+                >
+                  <div className="mediaQueueHeader">
+                    <p className="mediaQueueTitle">{item.originalFileName}</p>
+                    <span className="mediaQueueBadge">{getStatusText(item.status)}</span>
+                  </div>
+                  <p className="mediaQueueMeta">Imported {formatImportedAt(item.createdAt)}</p>
+                  <p className="mediaQueueMeta">Duration {formatDuration(item.durationMs)}</p>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {recentMedia.kind === 'success' && recentMedia.data.length === 0 && (
+            <div className="fileSummary">
+              <p className="fileName">No previous uploads yet</p>
+              <p className="fileMeta">Upload your first movie below and it will appear here for future sessions.</p>
+            </div>
+          )}
+        </section>
 
         <section className="uploadPanel">
           <div>
@@ -306,10 +655,110 @@ export default function App() {
             <p className="fileMeta">
               {selectedFile
                 ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`
-                : 'Choose a local movie to begin the Phase 2 workflow.'}
+                : 'Choose a local movie only when you want to add a new upload to the server.'}
             </p>
           </div>
         </section>
+
+        {media && (
+          <section className="uploadPanel">
+            <div>
+              <p className="sectionEyebrow">Select subtitles</p>
+              <h2>Attach subtitle files to the current media</h2>
+              <p className="sectionCopy">
+                Upload <span className="font-mono">.srt</span>, <span className="font-mono">.vtt</span>, or <span className="font-mono">.ass</span>. This also works for media selected from a previous session, so you can keep adding subtitles later.
+              </p>
+            </div>
+
+            <div className="actionsRow">
+              <input
+                accept=".srt,.vtt,.ass"
+                className="hiddenInput"
+                onChange={(event) => {
+                  const nextFile = event.target.files?.[0] ?? null;
+                  setSelectedSubtitleFile(nextFile);
+                  setError(null);
+                  setMessage(nextFile ? 'Subtitle selected and ready to upload.' : null);
+                }}
+                ref={subtitleInputRef}
+                type="file"
+              />
+              <button
+                className="primaryButton"
+                onClick={() => subtitleInputRef.current?.click()}
+                type="button"
+              >
+                Pick subtitle file
+              </button>
+              <button
+                className="secondaryButton"
+                disabled={!selectedSubtitleFile || !status || subtitleUploadState === 'uploading'}
+                onClick={() => {
+                  void uploadSelectedSubtitle();
+                }}
+                type="button"
+              >
+                {subtitleUploadState === 'uploading' ? 'Uploading...' : 'Upload subtitle'}
+              </button>
+            </div>
+
+            <div className="fileSummary">
+              <p className="fileName">{selectedSubtitleFile?.name ?? 'No subtitle selected yet'}</p>
+              <p className="fileMeta">
+                {subtitles.length > 0
+                  ? `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} attached to this media.`
+                  : 'Add at least one subtitle to exercise the Phase 3 player flow.'}
+              </p>
+            </div>
+          </section>
+        )}
+
+        {room && (
+          <section className="uploadPanel">
+            <div>
+              <p className="sectionEyebrow">Update room subtitle</p>
+              <h2>Change the subtitle used by the shared room</h2>
+              <p className="sectionCopy">
+                Pick which subtitle track should be active for the room. The browser player opened with this room token will follow this selection.
+              </p>
+            </div>
+
+            <div className="actionsRow roomSubtitleRow">
+              <select
+                className="selectInput"
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setSelectedRoomSubtitleId(nextValue === '__off__' ? null : nextValue);
+                }}
+                value={selectedRoomSubtitleId ?? '__off__'}
+              >
+                <option value="__off__">No subtitle</option>
+                {subtitles.map((subtitle) => (
+                  <option key={subtitle.id} value={subtitle.id}>
+                    {subtitle.label} ({subtitle.format})
+                  </option>
+                ))}
+              </select>
+              <button
+                className="secondaryButton"
+                disabled={roomSubtitleState === 'uploading'}
+                onClick={() => {
+                  void updateRoomSubtitle();
+                }}
+                type="button"
+              >
+                {roomSubtitleState === 'uploading' ? 'Updating...' : 'Update room subtitle'}
+              </button>
+            </div>
+
+            <div className="fileSummary">
+              <p className="fileName">
+                Current room subtitle: {room.subtitles.find((subtitle) => subtitle.id === room.room.activeSubtitleId)?.label ?? 'None'}
+              </p>
+              <p className="fileMeta">Room token: {room.room.token}</p>
+            </div>
+          </section>
+        )}
 
         {message && <p className="notice success">{message}</p>}
         {error && <p className="notice error">{error}</p>}
@@ -357,6 +806,16 @@ export default function App() {
                 >
                   Retry processing
                 </button>
+                <button
+                  className="secondaryButton"
+                  disabled={media.status !== 'ready' || roomState === 'uploading'}
+                  onClick={() => {
+                    void createRoom();
+                  }}
+                  type="button"
+                >
+                  {roomState === 'uploading' ? 'Creating room...' : 'Create room'}
+                </button>
               </div>
             </article>
 
@@ -364,27 +823,96 @@ export default function App() {
               <p className="sectionEyebrow">Share and preview</p>
               <h2>Generated URLs</h2>
               <p className="cardCopy">
-                Open the player URL in a browser to test the HLS playback surface.
+                Local URLs are for this machine. LAN URLs are for other devices on the same network. A future ngrok URL can coexist with both.
               </p>
 
               <div className="linkGroup">
-                <span className="linkLabel">Player URL</span>
+                <span className="linkLabel">Local player URL</span>
                 <p className="linkValue">{playerUrl ?? 'Unavailable until media exists'}</p>
                 {playerUrl && (
                   <button className="ghostButton" onClick={() => void copyText(playerUrl)} type="button">
-                    Copy player URL
+                    Copy local player URL
                   </button>
                 )}
               </div>
 
               <div className="linkGroup">
-                <span className="linkLabel">Manifest URL</span>
+                <span className="linkLabel">LAN player URL</span>
+                <p className="linkValue">{lanPlayerUrl ?? 'Available after LAN detection succeeds'}</p>
+                {lanPlayerUrl && (
+                  <button className="ghostButton" onClick={() => void copyText(lanPlayerUrl)} type="button">
+                    Copy LAN player URL
+                  </button>
+                )}
+              </div>
+
+              <div className="linkGroup">
+                <span className="linkLabel">Local manifest URL</span>
                 <p className="linkValue">{manifestUrl ?? 'Will appear after HLS is ready'}</p>
                 {manifestUrl && (
                   <button className="ghostButton" onClick={() => void copyText(manifestUrl)} type="button">
-                    Copy manifest URL
+                    Copy local manifest URL
                   </button>
                 )}
+              </div>
+
+              <div className="linkGroup">
+                <span className="linkLabel">LAN manifest URL</span>
+                <p className="linkValue">{lanManifestUrl ?? 'Available after LAN detection succeeds'}</p>
+                {lanManifestUrl && (
+                  <button className="ghostButton" onClick={() => void copyText(lanManifestUrl)} type="button">
+                    Copy LAN manifest URL
+                  </button>
+                )}
+              </div>
+
+              <div className="linkGroup">
+                <span className="linkLabel">Configured room URL</span>
+                <p className="linkValue">{room?.shareUrl ?? 'Create a room after processing completes'}</p>
+                {room?.shareUrl && (
+                  <button className="ghostButton" onClick={() => void copyText(room.shareUrl)} type="button">
+                    Copy configured room URL
+                  </button>
+                )}
+              </div>
+
+              <div className="linkGroup">
+                <span className="linkLabel">Local room player URL</span>
+                <p className="linkValue">{roomPlayerUrl ?? 'Create a room to get a synchronized subtitle player link'}</p>
+                {roomPlayerUrl && (
+                  <button className="ghostButton" onClick={() => void copyText(roomPlayerUrl)} type="button">
+                    Copy local room player URL
+                  </button>
+                )}
+              </div>
+
+              <div className="linkGroup">
+                <span className="linkLabel">LAN room player URL</span>
+                <p className="linkValue">{lanRoomPlayerUrl ?? 'Create a room and make sure LAN detection succeeds'}</p>
+                {lanRoomPlayerUrl && (
+                  <button className="ghostButton" onClick={() => void copyText(lanRoomPlayerUrl)} type="button">
+                    Copy LAN room player URL
+                  </button>
+                )}
+              </div>
+            </article>
+          </section>
+        )}
+
+        {subtitles.length > 0 && (
+          <section className="resultGrid">
+            <article className="card">
+              <p className="sectionEyebrow">Subtitle tracks</p>
+              <h2>Available tracks</h2>
+              <p className="cardCopy">
+                These tracks are now registered on the server and can be loaded by the browser player.
+              </p>
+              <div className="linkGroup">
+                {subtitles.map((subtitle) => (
+                  <p className="linkValue" key={subtitle.id}>
+                    {subtitle.label} • {subtitle.format}{subtitle.isDefault ? ' • default' : ''}
+                  </p>
+                ))}
               </div>
             </article>
           </section>
@@ -393,3 +921,7 @@ export default function App() {
     </main>
   );
 }
+
+
+
+

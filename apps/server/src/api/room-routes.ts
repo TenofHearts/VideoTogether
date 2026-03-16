@@ -11,6 +11,10 @@ const createRoomBodySchema = z.object({
   activeSubtitleId: z.string().uuid().nullable().optional()
 });
 
+const updateSubtitleBodySchema = z.object({
+  activeSubtitleId: z.string().uuid().nullable()
+});
+
 type RoomRouteDependencies = {
   roomService: RoomService;
 };
@@ -37,6 +41,25 @@ export async function registerRoomRoutes(
     };
   }>('/api/rooms/:token', async (request) => {
     return dependencies.roomService.getRoomByToken(request.params.token);
+  });
+
+  app.post<{
+    Params: {
+      token: string;
+    };
+  }>('/api/rooms/:token/subtitle', async (request, reply) => {
+    const parseResult = updateSubtitleBodySchema.safeParse(request.body ?? {});
+
+    if (!parseResult.success) {
+      throw new HttpError(400, 'Invalid subtitle selection payload');
+    }
+
+    const room = dependencies.roomService.updateActiveSubtitle(
+      request.params.token,
+      parseResult.data.activeSubtitleId
+    );
+
+    return reply.status(200).send(room);
   });
 
   app.post<{

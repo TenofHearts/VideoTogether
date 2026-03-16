@@ -8,6 +8,7 @@ import { registerStaticRoutes } from './api/static-routes.js';
 import { ensureStoragePaths, loadEnv } from './config/env.js';
 import { createDatabase } from './db/database.js';
 import { HttpError } from './lib/errors.js';
+import { isAllowedBrowserOrigin } from './lib/origins.js';
 import { createMediaService } from './services/media-service.js';
 import { createRoomService } from './services/room-service.js';
 import { bootstrapRealtime } from './sockets/bootstrap.js';
@@ -34,7 +35,11 @@ export async function buildApp() {
 
   await app.register(cors, {
     origin(origin, callback) {
-      if (!origin || origin === env.webOrigin || desktopOrigins.has(origin)) {
+      if (
+        !origin ||
+        desktopOrigins.has(origin) ||
+        isAllowedBrowserOrigin(origin, env.webOrigin)
+      ) {
         callback(null, true);
         return;
       }

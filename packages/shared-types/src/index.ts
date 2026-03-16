@@ -11,7 +11,7 @@ export type RoomStatus = 'active' | 'closed' | 'expired';
 
 export type MediaStatus = 'pending' | 'processing' | 'ready' | 'error';
 
-export type SubtitleFormat = 'srt' | 'vtt';
+export type SubtitleFormat = 'srt' | 'vtt' | 'ass';
 
 export type Room = {
   id: string;
@@ -79,8 +79,18 @@ export type MediaOperationResponse = {
   processingQueued: boolean;
 };
 
+export type SubtitleOperationResponse = {
+  subtitle: Subtitle;
+  subtitleUrl: string;
+};
+
 export type MediaListResponse = {
   media: Media[];
+};
+
+export type MediaSubtitlesResponse = {
+  mediaId: string;
+  subtitles: Subtitle[];
 };
 
 export type SystemStatus = {
@@ -105,4 +115,10 @@ export type SystemStatus = {
   };
 };
 
-export type DesktopStatus = Pick<SystemStatus, 'apiBaseUrl' | 'webUrl' | 'tauri'>;
+export type DesktopStatus = {
+  apiBaseUrl: string;
+  webUrl: string;
+  lanApiBaseUrl: string | null;
+  lanWebUrl: string | null;
+  tauri: 'ready';
+};

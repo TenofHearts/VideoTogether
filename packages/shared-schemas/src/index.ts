@@ -13,7 +13,7 @@ export const roomStatusSchema = z.enum(['active', 'closed', 'expired']);
 
 export const mediaStatusSchema = z.enum(['pending', 'processing', 'ready', 'error']);
 
-export const subtitleFormatSchema = z.enum(['srt', 'vtt']);
+export const subtitleFormatSchema = z.enum(['srt', 'vtt', 'ass']);
 
 export const roomSchema = z.object({
   id: z.string().uuid(),
@@ -79,8 +79,18 @@ export const mediaOperationResponseSchema = z.object({
   processingQueued: z.boolean()
 });
 
+export const subtitleOperationResponseSchema = z.object({
+  subtitle: subtitleSchema,
+  subtitleUrl: z.string().url()
+});
+
 export const mediaListResponseSchema = z.object({
   media: z.array(mediaSchema)
+});
+
+export const mediaSubtitlesResponseSchema = z.object({
+  mediaId: z.string().uuid(),
+  subtitles: z.array(subtitleSchema)
 });
 
 export const systemStatusSchema = z.object({
@@ -108,5 +118,7 @@ export const systemStatusSchema = z.object({
 export const desktopStatusSchema = z.object({
   apiBaseUrl: z.string().url(),
   webUrl: z.string().url(),
+  lanApiBaseUrl: z.string().url().nullable(),
+  lanWebUrl: z.string().url().nullable(),
   tauri: z.literal('ready')
 });

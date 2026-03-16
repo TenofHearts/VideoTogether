@@ -95,6 +95,14 @@ export function createRoomService(
     WHERE token = ?
   `);
 
+  const updateRoomSubtitleStatement = database.connection.prepare(`
+    UPDATE rooms
+    SET
+      active_subtitle_id = ?,
+      last_state_updated_at = ?
+    WHERE token = ?
+  `);
+
   function buildRoomLookupResponse(room: Room): RoomLookupResponse {
     const media = room.activeMediaId
       ? mediaService.getMediaById(room.activeMediaId)
@@ -112,9 +120,46 @@ export function createRoomService(
     };
   }
 
+  function getValidatedRoom(token: string): Room {
+    const row = getRoomByTokenStatement.get(token) as RoomRow | undefined;
+
+    if (!row) {
+      throw new HttpError(404, 'Room not found');
+    }
+
+    const room = mapRoom(row);
+
+    if (room.expiresAt && new Date(room.expiresAt).getTime() <= Date.now()) {
+      throw new HttpError(410, 'Room expired');
+    }
+
+    if (room.status === 'closed') {
+      throw new HttpError(410, 'Room closed');
+    }
+
+    return room;
+  }
+
   return {
     createRoom(input: CreateRoomRequest): RoomLookupResponse {
       const now = new Date().toISOString();
+
+      if (input.activeMediaId && !mediaService.getMediaById(input.activeMediaId)) {
+        throw new HttpError(404, 'Active media not found');
+      }
+
+      if (input.activeSubtitleId) {
+        const subtitle = mediaService.getSubtitleById(input.activeSubtitleId);
+
+        if (!subtitle) {
+          throw new HttpError(404, 'Active subtitle not found');
+        }
+
+        if (input.activeMediaId && subtitle.mediaId !== input.activeMediaId) {
+          throw new HttpError(400, 'Active subtitle does not belong to the selected media');
+        }
+      }
+
       const room: Room = {
         id: randomUUID(),
         token: randomBytes(env.roomTokenBytes).toString('base64url'),
@@ -149,23 +194,36 @@ export function createRoomService(
     },
 
     getRoomByToken(token: string): RoomLookupResponse {
-      const row = getRoomByTokenStatement.get(token) as RoomRow | undefined;
+      return buildRoomLookupResponse(getValidatedRoom(token));
+    },
 
-      if (!row) {
-        throw new HttpError(404, 'Room not found');
+    updateActiveSubtitle(token: string, activeSubtitleId: string | null): RoomLookupResponse {
+      const room = getValidatedRoom(token);
+
+      if (!room.activeMediaId) {
+        throw new HttpError(400, 'Room has no active media');
       }
 
-      const room = mapRoom(row);
+      if (activeSubtitleId) {
+        const subtitle = mediaService.getSubtitleById(activeSubtitleId);
 
-      if (room.expiresAt && new Date(room.expiresAt).getTime() <= Date.now()) {
-        throw new HttpError(410, 'Room expired');
+        if (!subtitle) {
+          throw new HttpError(404, 'Subtitle not found');
+        }
+
+        if (subtitle.mediaId !== room.activeMediaId) {
+          throw new HttpError(400, 'Subtitle does not belong to the room media');
+        }
       }
 
-      if (room.status === 'closed') {
-        throw new HttpError(410, 'Room closed');
-      }
+      const updatedAt = new Date().toISOString();
+      updateRoomSubtitleStatement.run(activeSubtitleId, updatedAt, token);
 
-      return buildRoomLookupResponse(room);
+      return buildRoomLookupResponse({
+        ...room,
+        activeSubtitleId,
+        lastStateUpdatedAt: updatedAt
+      });
     },
 
     closeRoom(token: string): void {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync, rmSync } from 'node:fs';
+import { createReadStream, createWriteStream, mkdirSync, rmSync } from 'node:fs';
 import { basename, extname, resolve } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -12,7 +12,8 @@ import type {
   Media,
   MediaListResponse,
   MediaOperationResponse,
-  Subtitle
+  Subtitle,
+  SubtitleOperationResponse
 } from '../types/models.js';
 
 type MediaRow = {
@@ -58,6 +59,8 @@ type ProbeResult = {
   streams?: ProbeStream[];
   format?: ProbeFormat;
 };
+
+const supportedSubtitleExtensions = new Set(['.srt', '.vtt', '.ass']);
 
 function mapMedia(row: MediaRow): Media {
   return {
@@ -132,9 +135,13 @@ function buildUrlFromBase(baseUrl: string, relativePath: string): string {
   return normalizedBase.toString();
 }
 
-function createPlayerUrl(webOrigin: string, mediaId: string): string {
+function createPlayerUrl(webOrigin: string, mediaId: string, roomToken?: string): string {
   const playerUrl = new URL(buildUrlFromBase(webOrigin, ''));
   playerUrl.searchParams.set('mediaId', mediaId);
+
+  if (roomToken) {
+    playerUrl.searchParams.set('roomToken', roomToken);
+  }
 
   return playerUrl.toString();
 }
@@ -151,6 +158,10 @@ function createManifestUrl(
     publicBaseUrl,
     `media/${media.id}/${media.hlsManifestPath}`
   );
+}
+
+function createSubtitleUrl(publicBaseUrl: string, subtitleId: string): string {
+  return buildUrlFromBase(publicBaseUrl, `subtitles/${subtitleId}.vtt`);
 }
 
 async function runCommand(command: string, args: string[]): Promise<string> {
@@ -185,6 +196,21 @@ async function runCommand(command: string, args: string[]): Promise<string> {
       );
     });
   });
+}
+
+function getSubtitleFormat(fileName: string): Subtitle['format'] {
+  const extension = extname(fileName).toLowerCase();
+
+  if (!supportedSubtitleExtensions.has(extension)) {
+    throw new HttpError(415, 'Unsupported subtitle file. Expected .srt, .vtt, or .ass');
+  }
+
+  return extension.slice(1) as Subtitle['format'];
+}
+
+function createSubtitleLabel(fileName: string): string {
+  const cleanName = basename(fileName, extname(fileName)).trim();
+  return cleanName.length > 0 ? cleanName : 'Subtitle track';
 }
 
 export type MediaService = ReturnType<typeof createMediaService>;
@@ -275,6 +301,19 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       status,
       created_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const insertSubtitleStatement = database.connection.prepare(`
+    INSERT INTO subtitles (
+      id,
+      media_id,
+      label,
+      language,
+      format,
+      source_path,
+      served_path,
+      is_default
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const updateMediaMetadataStatement = database.connection.prepare(`
@@ -401,6 +440,16 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     }
   }
 
+  async function convertSubtitleToVtt(sourcePath: string, targetPath: string) {
+    await runCommand(env.mediaProcessing.ffmpegPath, [
+      '-y',
+      '-i',
+      sourcePath,      '-f',
+      'webvtt',
+      targetPath
+    ]);
+  }
+
   function buildOperationResponse(
     media: Media,
     processingQueued: boolean
@@ -491,6 +540,69 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       return buildOperationResponse(latestMedia, processingQueued);
     },
 
+    async importSubtitleForMedia(input: {
+      mediaId: string;
+      fileName: string;
+      stream: Readable;
+      language?: string | null;
+      label?: string | null;
+      isDefault?: boolean;
+    }): Promise<SubtitleOperationResponse> {
+      const media = service.getMediaById(input.mediaId);
+
+      if (!media) {
+        throw new HttpError(404, 'Media not found');
+      }
+
+      const subtitleId = randomUUID();
+      const sanitizedFileName = sanitizeFileName(input.fileName);
+      const originalFormat = getSubtitleFormat(sanitizedFileName);
+      const sourcePath = resolve(
+        env.storage.subtitleDir,
+        `${subtitleId}-source${extname(sanitizedFileName).toLowerCase()}`
+      );
+      const servedPath = resolve(env.storage.subtitleDir, `${subtitleId}.vtt`);
+
+      try {
+        await pipeline(input.stream, createWriteStream(sourcePath));
+
+        if (originalFormat === 'vtt') {
+          await pipeline(
+            createReadStream(sourcePath),
+            createWriteStream(servedPath)
+          );
+        } else {
+          await convertSubtitleToVtt(sourcePath, servedPath);
+        }
+      } catch (error) {
+        rmSync(sourcePath, { force: true });
+        rmSync(servedPath, { force: true });
+        throw new HttpError(422, `Subtitle import failed: ${toProcessingErrorMessage(error)}`);
+      }
+
+      insertSubtitleStatement.run(
+        subtitleId,
+        media.id,
+        input.label?.trim() || createSubtitleLabel(sanitizedFileName),
+        input.language?.trim() || null,
+        originalFormat,
+        sourcePath,
+        servedPath,
+        input.isDefault ? 1 : 0
+      );
+
+      const subtitle = service.getSubtitleById(subtitleId);
+
+      if (!subtitle) {
+        throw new HttpError(500, 'Subtitle import completed but record was missing');
+      }
+
+      return {
+        subtitle,
+        subtitleUrl: createSubtitleUrl(env.publicBaseUrl, subtitle.id)
+      };
+    },
+
     startProcessing(mediaId: string): boolean {
       if (activeProcessingJobs.has(mediaId)) {
         return false;
@@ -516,11 +628,17 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       const latestMedia = service.getMediaById(mediaId) ?? media;
 
       return buildOperationResponse(latestMedia, processingQueued);
+    },
+
+    buildPlayerUrl(mediaId: string, roomToken?: string): string {
+      return createPlayerUrl(env.webOrigin, mediaId, roomToken);
+    },
+
+    buildSubtitleUrl(subtitleId: string): string {
+      return createSubtitleUrl(env.publicBaseUrl, subtitleId);
     }
   };
 
   return service;
 }
-
-
 

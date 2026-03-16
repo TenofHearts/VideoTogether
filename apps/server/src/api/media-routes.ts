@@ -9,6 +9,14 @@ type MediaRouteDependencies = {
   mediaService: MediaService;
 };
 
+function decodeUploadFileName(rawFileName: string): string {
+  try {
+    return decodeURIComponent(rawFileName);
+  } catch {
+    return rawFileName;
+  }
+}
+
 export async function registerMediaRoutes(
   app: FastifyInstance,
   dependencies: MediaRouteDependencies
@@ -43,20 +51,50 @@ export async function registerMediaRoutes(
         throw new HttpError(400, 'Missing media upload body');
       }
 
-      let fileName = rawFileName;
-
-      try {
-        fileName = decodeURIComponent(rawFileName);
-      } catch {
-        fileName = rawFileName;
-      }
-
       const result = await dependencies.mediaService.importUploadedMedia({
-        fileName,
+        fileName: decodeUploadFileName(rawFileName),
         stream
       });
 
       return reply.status(202).send(result);
+    }
+  );
+
+  app.post<{
+    Params: {
+      id: string;
+    };
+    Body: Readable;
+  }>(
+    '/api/media/:id/subtitles',
+    {
+      bodyLimit: 256 * 1024 * 1024
+    },
+    async (request, reply) => {
+      const rawFileName = request.headers['x-file-name'];
+      const stream = request.body;
+      const rawLanguage = request.headers['x-subtitle-language'];
+      const rawLabel = request.headers['x-subtitle-label'];
+      const rawIsDefault = request.headers['x-subtitle-default'];
+
+      if (typeof rawFileName !== 'string' || rawFileName.length === 0) {
+        throw new HttpError(400, 'Missing x-file-name header');
+      }
+
+      if (!stream) {
+        throw new HttpError(400, 'Missing subtitle upload body');
+      }
+
+      const result = await dependencies.mediaService.importSubtitleForMedia({
+        mediaId: request.params.id,
+        fileName: decodeUploadFileName(rawFileName),
+        stream,
+        language: typeof rawLanguage === 'string' ? rawLanguage : null,
+        label: typeof rawLabel === 'string' ? rawLabel : null,
+        isDefault: rawIsDefault === 'true'
+      });
+
+      return reply.status(201).send(result);
     }
   );
 

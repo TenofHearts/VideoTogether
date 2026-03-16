@@ -359,8 +359,8 @@ Server is authoritative for:
 - expose manifest and segment files through Fastify static serving
 
 ## 9.3 Subtitle Pipeline
-- support `.srt` and `.vtt`
-- convert `.srt` to `.vtt` when necessary
+- support `.srt`, `.vtt`, and `.ass`
+- convert `.srt` / `.ass` to `.vtt` when necessary
 - store converted subtitle files
 - expose subtitle track URLs to frontend player
 
@@ -675,6 +675,30 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - subtitles appear in player
 - both users see same selected subtitle track
 - subtitle switching propagates through room state
+
+### Progress Notes
+- status: completed
+- completed:
+  - desktop host app can upload subtitle files for the currently selected media
+  - subtitle pipeline now supports `.srt`, `.vtt`, and `.ass`, converting to served `.vtt` output when needed
+  - subtitle metadata is persisted in SQLite and exposed through media subtitle APIs
+  - subtitle static serving now provides converted WebVTT tracks for browser playback
+  - browser player now loads subtitle tracks, allows subtitle selection, and syncs room-backed subtitle state
+  - desktop host dashboard now supports room subtitle updates after room creation
+  - desktop host can reuse previously uploaded media from earlier sessions and continue adding subtitles without re-uploading the video
+  - desktop host now exposes local and LAN playback URLs so the same build can be tested on the host machine or another LAN device
+  - web dev server now listens on LAN interfaces and the client resolves API URLs against the active host, enabling same-network playback during development
+- verified:
+  - `npm run build --workspace @videoshare/server` passes
+  - `npm run typecheck --workspace @videoshare/web` passes
+  - `npm run lint --workspace @videoshare/web` passes
+  - `npm run typecheck --workspace @videoshare/desktop` passes
+  - `npm run lint --workspace @videoshare/desktop` passes
+  - subtitle upload, conversion, playback, and room subtitle switching were exercised locally
+  - generated subtitle `.vtt` files were confirmed on disk and served by the backend
+- acceptance completed on 2026-03-16:
+  - Phase 3 deliverables are considered done
+  - Phase 4 can start from the current repository state
 
 ---
 

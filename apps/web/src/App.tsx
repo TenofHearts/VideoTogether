@@ -4,7 +4,10 @@ import { io } from 'socket.io-client';
 import type {
   Media,
   MediaListResponse,
+  MediaSubtitlesResponse,
+  RoomLookupResponse,
   ServiceHealth,
+  Subtitle,
   SystemStatus
 } from '@videoshare/shared-types';
 import {
@@ -42,6 +45,18 @@ type SelectedMediaState =
   | { kind: 'error'; message: string }
   | { kind: 'success'; data: Media };
 
+type RoomState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'success'; data: RoomLookupResponse };
+
+type SubtitleState =
+  | { kind: 'idle'; data: Subtitle[] }
+  | { kind: 'loading'; data: Subtitle[] }
+  | { kind: 'error'; message: string; data: Subtitle[] }
+  | { kind: 'success'; data: Subtitle[] };
+
 const apiBaseUrl = getApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
 
 function getManifestUrl(media: Pick<Media, 'id' | 'hlsManifestPath'>): string | null {
@@ -50,6 +65,10 @@ function getManifestUrl(media: Pick<Media, 'id' | 'hlsManifestPath'>): string | 
   }
 
   return buildUrlFromBase(apiBaseUrl, `media/${media.id}/${media.hlsManifestPath}`);
+}
+
+function getSubtitleUrl(subtitleId: string): string {
+  return buildUrlFromBase(apiBaseUrl, `subtitles/${subtitleId}.vtt`);
 }
 
 function formatDuration(durationMs: number | null): string {
@@ -82,6 +101,34 @@ function getStatusLabel(status: Media['status']): string {
   }
 }
 
+function isSameMedia(left: Media, right: Media): boolean {
+  return (
+    left.id === right.id &&
+    left.status === right.status &&
+    left.hlsManifestPath === right.hlsManifestPath &&
+    left.processingError === right.processingError &&
+    left.durationMs === right.durationMs
+  );
+}
+
+function isSameSubtitleList(left: Subtitle[], right: Subtitle[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((subtitle, index) => {
+    const other = right[index];
+
+    return (
+      subtitle.id === other?.id &&
+      subtitle.label === other?.label &&
+      subtitle.language === other?.language &&
+      subtitle.format === other?.format &&
+      subtitle.isDefault === other?.isDefault
+    );
+  });
+}
+
 export default function App() {
   const [health, setHealth] = useState<HealthState>({ kind: 'loading' });
   const [system, setSystem] = useState<SystemState>({ kind: 'loading' });
@@ -96,10 +143,24 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     return params.get('mediaId');
   });
+  const [roomToken, setRoomToken] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('roomToken');
+  });
   const [selectedMedia, setSelectedMedia] = useState<SelectedMediaState>(() =>
     selectedMediaId ? { kind: 'loading' } : { kind: 'idle' }
   );
+  const [roomState, setRoomState] = useState<RoomState>(() =>
+    roomToken ? { kind: 'loading' } : { kind: 'idle' }
+  );
+  const [subtitleState, setSubtitleState] = useState<SubtitleState>({
+    kind: 'idle',
+    data: []
+  });
+  const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(null);
   const [playerMessage, setPlayerMessage] = useState<string | null>(null);
+  const [subtitleMessage, setSubtitleMessage] = useState<string | null>(null);
+  const [subtitleSaving, setSubtitleSaving] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
@@ -254,8 +315,71 @@ export default function App() {
   }, [system.kind === 'success' ? system.data.realtime.path : 'unavailable']);
 
   useEffect(() => {
-    if (!selectedMediaId) {
-      setSelectedMedia({ kind: 'idle' });
+    if (!roomToken) {
+      setRoomState({ kind: 'idle' });
+      return;
+    }
+
+    let cancelled = false;
+    let timer: number | null = null;
+
+    async function loadRoom() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/rooms/${roomToken}`);
+
+        if (!response.ok) {
+          throw new Error(`Room lookup failed with ${response.status}`);
+        }
+
+        const data = (await response.json()) as RoomLookupResponse;
+
+        if (cancelled) {
+          return;
+        }
+
+        setRoomState({ kind: 'success', data });
+        setSelectedMediaId(data.media?.id ?? null);
+        setSelectedSubtitleId((current) =>
+          current === data.room.activeSubtitleId ? current : data.room.activeSubtitleId
+        );
+        setSubtitleState((current) => {
+          if (isSameSubtitleList(current.data, data.subtitles)) {
+            return current.kind === 'success'
+              ? current
+              : { kind: 'success', data: current.data };
+          }
+
+          return { kind: 'success', data: data.subtitles };
+        });
+        timer = window.setTimeout(() => {
+          void loadRoom();
+        }, 3000);
+      } catch (error) {
+        if (!cancelled) {
+          setRoomState({
+            kind: 'error',
+            message: error instanceof Error ? error.message : 'Unknown room error'
+          });
+        }
+      }
+    }
+
+    setRoomState({ kind: 'loading' });
+    void loadRoom();
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [roomToken]);
+
+  useEffect(() => {
+    if (!selectedMediaId || roomToken) {
+      if (!selectedMediaId) {
+        setSelectedMedia({ kind: 'idle' });
+      }
       return;
     }
 
@@ -276,7 +400,13 @@ export default function App() {
           return;
         }
 
-        setSelectedMedia({ kind: 'success', data });
+        setSelectedMedia((current) => {
+          if (current.kind === 'success' && isSameMedia(current.data, data)) {
+            return current;
+          }
+
+          return { kind: 'success', data };
+        });
 
         if (data.status === 'pending' || data.status === 'processing') {
           timer = window.setTimeout(() => {
@@ -302,7 +432,65 @@ export default function App() {
         window.clearTimeout(timer);
       }
     };
-  }, [selectedMediaId]);
+  }, [selectedMediaId, roomToken]);
+
+  useEffect(() => {
+    const mediaFromRoom = roomState.kind === 'success' ? roomState.data.media : null;
+
+    if (!mediaFromRoom) {
+      return;
+    }
+
+    setSelectedMedia((current) => {
+      if (current.kind === 'success' && isSameMedia(current.data, mediaFromRoom)) {
+        return current;
+      }
+
+      return { kind: 'success', data: mediaFromRoom };
+    });
+  }, [roomState]);
+
+  useEffect(() => {
+    if (!selectedMediaId || roomToken) {
+      return;
+    }
+
+    let cancelled = false;
+    setSubtitleState((current) => ({ kind: 'loading', data: current.data }));
+
+    async function loadSubtitles() {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/media/${selectedMediaId}/subtitles`);
+
+        if (!response.ok) {
+          throw new Error(`Subtitle lookup failed with ${response.status}`);
+        }
+
+        const data = (await response.json()) as MediaSubtitlesResponse;
+
+        if (!cancelled) {
+          setSubtitleState({ kind: 'success', data: data.subtitles });
+          setSelectedSubtitleId(
+            (current) => current ?? data.subtitles.find((subtitle) => subtitle.isDefault)?.id ?? null
+          );
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setSubtitleState({
+            kind: 'error',
+            message: error instanceof Error ? error.message : 'Unknown subtitle error',
+            data: []
+          });
+        }
+      }
+    }
+
+    void loadSubtitles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMediaId, roomToken]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -323,6 +511,7 @@ export default function App() {
       setPlayerMessage('Manifest will appear after processing completes.');
       return;
     }
+
     let cleanup = () => {
       video.pause();
       video.removeAttribute('src');
@@ -391,22 +580,129 @@ export default function App() {
     };
   }, [selectedMedia]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    const existingTrackElements = Array.from(
+      video.querySelectorAll('track[data-managed-subtitle="true"]')
+    );
+    for (const trackElement of existingTrackElements) {
+      trackElement.remove();
+    }
+
+    for (const subtitle of subtitleState.data) {
+      const trackElement = document.createElement('track');
+      trackElement.kind = 'subtitles';
+      trackElement.label = subtitle.label;
+      trackElement.src = getSubtitleUrl(subtitle.id);
+      trackElement.srclang = subtitle.language ?? 'und';
+      trackElement.default = subtitle.id === selectedSubtitleId;
+      trackElement.setAttribute('data-managed-subtitle', 'true');
+      trackElement.setAttribute('data-subtitle-id', subtitle.id);
+      trackElement.addEventListener('load', () => {
+        trackElement.track.mode = subtitle.id === selectedSubtitleId ? 'showing' : 'disabled';
+      });
+      video.appendChild(trackElement);
+    }
+  }, [subtitleState.data, selectedSubtitleId]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return;
+    }
+
+    const textTracks = Array.from(video.textTracks);
+    for (const textTrack of textTracks) {
+      textTrack.mode = 'disabled';
+    }
+
+    if (!selectedSubtitleId) {
+      setSubtitleMessage('Subtitles are off.');
+      return;
+    }
+
+    const trackElements = Array.from(
+      video.querySelectorAll('track[data-managed-subtitle="true"]')
+    );
+    const trackIndex = trackElements.findIndex(
+      (trackElement) => trackElement.getAttribute('data-subtitle-id') === selectedSubtitleId
+    );
+    const matchingTrack = trackIndex >= 0 ? video.textTracks[trackIndex] : null;
+
+    if (matchingTrack) {
+      matchingTrack.mode = 'showing';
+      const subtitle = subtitleState.data.find((item) => item.id === selectedSubtitleId);
+      setSubtitleMessage(`Showing subtitle: ${subtitle?.label ?? 'Unknown track'}`);
+      return;
+    }
+
+    setSubtitleMessage('Subtitle track is still loading.');
+  }, [selectedSubtitleId, subtitleState.data]);
+
   const selectedMediaData = selectedMedia.kind === 'success' ? selectedMedia.data : null;
   const manifestUrl = selectedMediaData ? getManifestUrl(selectedMediaData) : null;
+
+  async function saveSubtitleSelection(nextSubtitleId: string | null) {
+    if (!roomToken) {
+      setSelectedSubtitleId(nextSubtitleId);
+      return;
+    }
+
+    try {
+      setSubtitleSaving(true);
+      setSubtitleMessage('Saving subtitle selection to room state...');
+      const response = await fetch(`${apiBaseUrl}/api/rooms/${roomToken}/subtitle`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          activeSubtitleId: nextSubtitleId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Subtitle update failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as RoomLookupResponse;
+      setRoomState({ kind: 'success', data: payload });
+      setSelectedSubtitleId(payload.room.activeSubtitleId);
+      setSubtitleState({ kind: 'success', data: payload.subtitles });
+    } catch (error) {
+      setSubtitleMessage(error instanceof Error ? error.message : 'Failed to save subtitle selection');
+    } finally {
+      setSubtitleSaving(false);
+    }
+  }
 
   function openMedia(mediaId: string) {
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.set('mediaId', mediaId);
+    nextUrl.searchParams.delete('roomToken');
     window.history.replaceState({}, '', nextUrl);
+    setRoomToken(null);
     setSelectedMediaId(mediaId);
+    setSelectedSubtitleId(null);
   }
 
   function clearSelection() {
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.delete('mediaId');
+    nextUrl.searchParams.delete('roomToken');
     window.history.replaceState({}, '', nextUrl);
     setSelectedMediaId(null);
+    setRoomToken(null);
     setPlayerMessage(null);
+    setSubtitleMessage(null);
+    setSelectedSubtitleId(null);
+    setSubtitleState({ kind: 'idle', data: [] });
   }
 
   return (
@@ -414,13 +710,13 @@ export default function App() {
       <div className="mx-auto flex max-w-6xl flex-col gap-8">
         <section className="overflow-hidden rounded-[2rem] border border-white/70 bg-white/80 p-8 shadow-panel backdrop-blur">
           <p className="text-sm uppercase tracking-[0.35em] text-coral">
-            Phase 2
+            Phase 3
           </p>
           <h1 className="mt-4 max-w-4xl font-serif text-4xl font-semibold leading-tight md:text-6xl">
-            Media import, HLS processing, and browser playback are now wired into the app shell.
+            Browser playback now supports subtitle loading, subtitle switching, and room-backed subtitle state.
           </h1>
           <p className="mt-4 max-w-3xl text-lg text-slate-600">
-            Use the desktop host to import a local movie, then open this page with a <span className="font-mono">mediaId</span> to watch processing progress and play the generated stream.
+            Use the desktop host to import a local movie and subtitle files, then open this page with a <span className="font-mono">mediaId</span> or <span className="font-mono">roomToken</span> to play the generated stream with synchronized subtitle selection.
           </p>
         </section>
 
@@ -444,15 +740,21 @@ export default function App() {
               )}
             </div>
 
-            {selectedMedia.kind === 'idle' && (
-              <div className="mt-6 rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 p-8 text-slate-600">
-                Pick a recently imported media item below, or open this page with <span className="font-mono">?mediaId=&lt;id&gt;</span>.
+            {roomState.kind === 'error' && (
+              <div className="mt-6 rounded-[1.5rem] border border-red-200 bg-red-50 p-6 text-red-700">
+                {roomState.message}
               </div>
             )}
 
-            {selectedMedia.kind === 'loading' && (
+            {selectedMedia.kind === 'idle' && roomState.kind !== 'loading' && (
+              <div className="mt-6 rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 p-8 text-slate-600">
+                Pick a recently imported media item below, or open this page with <span className="font-mono">?mediaId=&lt;id&gt;</span> or <span className="font-mono">?mediaId=&lt;id&gt;&amp;roomToken=&lt;token&gt;</span>.
+              </div>
+            )}
+
+            {(selectedMedia.kind === 'loading' || roomState.kind === 'loading') && (
               <div className="mt-6 rounded-[1.5rem] bg-slate-900 p-8 text-white">
-                Loading media metadata and processing state...
+                Loading media metadata, room state, and subtitle tracks...
               </div>
             )}
 
@@ -468,6 +770,7 @@ export default function App() {
                   <video
                     className="aspect-video w-full rounded-[1.25rem] bg-black object-contain"
                     controls
+                    crossOrigin="anonymous"
                     ref={videoRef}
                   />
                 </div>
@@ -485,10 +788,13 @@ export default function App() {
                     <p className="mt-1">
                       Video: {selectedMediaData.videoCodec ?? 'Unknown'}
                       {selectedMediaData.width && selectedMediaData.height
-                        ? ` • ${selectedMediaData.width}x${selectedMediaData.height}`
+                        ? ` �?${selectedMediaData.width}x${selectedMediaData.height}`
                         : ''}
                     </p>
                     <p className="mt-1">Audio: {selectedMediaData.audioCodec ?? 'Unknown'}</p>
+                    <p className="mt-3 text-slate-600">
+                      Room mode: {roomToken ? 'Enabled' : 'Off'}
+                    </p>
                   </div>
 
                   <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-700">
@@ -501,12 +807,63 @@ export default function App() {
                     <p className="mt-3 text-slate-600">
                       {playerMessage ?? 'Waiting for the player to initialize.'}
                     </p>
+                    <p className="mt-3 text-slate-600">
+                      {subtitleMessage ?? 'Subtitles are ready to be selected below.'}
+                    </p>
                     {selectedMediaData.processingError && (
                       <p className="mt-3 rounded-xl bg-red-50 p-3 text-red-700">
                         {selectedMediaData.processingError}
                       </p>
                     )}
                   </div>
+                </div>
+
+                <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-700">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                        Subtitles
+                      </p>
+                      <p className="mt-2 text-lg font-semibold text-slate-900">
+                        Track selection
+                      </p>
+                    </div>
+                    {subtitleSaving && (
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                        Saving...
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center">
+                    <select
+                      className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900"
+                      disabled={subtitleState.data.length === 0 || subtitleSaving}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        void saveSubtitleSelection(nextValue === '__off__' ? null : nextValue);
+                      }}
+                      value={selectedSubtitleId ?? '__off__'}
+                    >
+                      <option value="__off__">Subtitles off</option>
+                      {subtitleState.data.map((subtitle) => (
+                        <option key={subtitle.id} value={subtitle.id}>
+                          {subtitle.label} ({subtitle.format})
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-sm text-slate-600">
+                      {roomToken
+                        ? 'Changes are written back to the room so the other viewer will see the same selected track.'
+                        : 'Open with a room token to make subtitle selection shared between viewers.'}
+                    </p>
+                  </div>
+
+                  {subtitleState.kind === 'error' && (
+                    <p className="mt-3 rounded-xl bg-red-50 p-3 text-red-700">
+                      {subtitleState.message}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -548,6 +905,15 @@ export default function App() {
                   </p>
                 )}
               </div>
+
+              {roomState.kind === 'success' && (
+                <div className="mt-5 rounded-2xl bg-white/10 p-4 text-sm text-slate-100">
+                  <p className="font-medium">Room state</p>
+                  <p className="mt-2 break-all font-mono">Token: {roomState.data.room.token}</p>
+                  <p className="mt-1">Selected subtitle: {roomState.data.room.activeSubtitleId ?? 'none'}</p>
+                  <p className="mt-1">Updated: {formatTimestamp(roomState.data.room.lastStateUpdatedAt)}</p>
+                </div>
+              )}
             </section>
 
             <section className="rounded-[2rem] border border-slate-200 bg-white/85 p-6 shadow-panel">
@@ -614,3 +980,6 @@ export default function App() {
     </main>
   );
 }
+
+
+
