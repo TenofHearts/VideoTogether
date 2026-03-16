@@ -14,6 +14,7 @@ const schemaSql = `
     width INTEGER,
     height INTEGER,
     hls_manifest_path TEXT,
+    processing_error TEXT,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
@@ -60,9 +61,29 @@ export function createDatabase(databasePath: string): DatabaseContext {
   const connection = new DatabaseSync(databasePath);
 
   connection.exec(schemaSql);
+  ensureColumnExists(connection, 'media', 'processing_error', 'TEXT');
 
   return {
     connection,
     path: databasePath
   };
+}
+
+function ensureColumnExists(
+  connection: DatabaseSync,
+  tableName: 'media' | 'rooms' | 'subtitles',
+  columnName: string,
+  columnDefinition: string
+) {
+  const columns = connection
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name: string }>;
+
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  connection.exec(
+    `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`
+  );
 }

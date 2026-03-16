@@ -632,9 +632,38 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - generated `.m3u8` and segments are served
 - remote browser can load and play stream
 
----
+### Progress Notes
+- status: completed
+- completed:
+  - desktop host app can select a local movie file and upload it to the local Fastify server
+  - media import endpoint now accepts binary uploads and persists media metadata in SQLite
+  - FFmpeg / ffprobe integration added for metadata probing, HLS generation, retry handling, and processing error capture
+  - media processing state is now tracked through `pending`, `processing`, `ready`, and `error`
+  - recent media listing endpoint added so the browser preview can discover imported media
+  - browser preview page added with processing-state polling and HLS playback bootstrap
+  - desktop and web Vite entry points were adjusted so local development no longer white-screens on this machine
+  - server CORS policy expanded to allow the local desktop dev origin during development
+  - host-side verification confirmed media upload, HLS generation, and browser playback flow
+  - browser HLS playback no longer relies on a runtime CDN script and now works with a bundled local `hls.js` dependency
+  - generated `playerUrl` and `manifestUrl` values now preserve configured subpaths for reverse-proxy deployments
+- verified:
+  - `npm run build --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/web` passes
+  - `npm run lint --workspace @videoshare/desktop` passes
+  - `npm run typecheck --workspace @videoshare/web` passes
+  - `npm run typecheck --workspace @videoshare/desktop` passes
+  - local Fastify injection confirms `POST /api/media/import` returns `202` and persists media metadata
+  - desktop host can upload a real local movie file from the host environment
+  - host environment confirmed ffprobe / FFmpeg processing completes and moves media into playable HLS output
+  - browser preview can monitor processing state and play generated media after processing completes
+  - Phase 2 playback flow no longer requires public internet access just to fetch the HLS runtime library
+  - Phase 2 API URLs remain valid when `PUBLIC_BASE_URL` or `WEB_ORIGIN` are deployed under a non-root path
+- acceptance completed on 2026-03-16:
+  - Phase 2 deliverables are considered done
+  - Phase 3 can start from the current repository state
 
-## Phase 3 — Subtitle Support
+---## Phase 3 — Subtitle Support
 ### Goals
 - subtitle file import from Tauri
 - `.srt` to `.vtt` conversion
@@ -858,3 +887,5 @@ The MVP is complete when all of the following are true:
 - implement browser-first remote experience even though host uses Tauri
 - design code so remote desktop app can be added later without major backend changes
 - only the server backend runs on Docker, the application itself may run on the local computer. 
+
+

@@ -41,6 +41,7 @@ export const mediaSchema = z.object({
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
   hlsManifestPath: z.string().nullable(),
+  processingError: z.string().nullable(),
   status: mediaStatusSchema,
   createdAt: z.string().datetime()
 });
@@ -71,6 +72,17 @@ export const roomLookupResponseSchema = z.object({
   socketPath: z.string().min(1)
 });
 
+export const mediaOperationResponseSchema = z.object({
+  media: mediaSchema,
+  manifestUrl: z.string().url().nullable(),
+  playerUrl: z.string().url(),
+  processingQueued: z.boolean()
+});
+
+export const mediaListResponseSchema = z.object({
+  media: z.array(mediaSchema)
+});
+
 export const systemStatusSchema = z.object({
   apiBaseUrl: z.string().url(),
   webUrl: z.string().url(),
@@ -91,4 +103,10 @@ export const systemStatusSchema = z.object({
     status: z.enum(['ready', 'disabled']),
     detail: z.string().min(1)
   })
+});
+
+export const desktopStatusSchema = z.object({
+  apiBaseUrl: z.string().url(),
+  webUrl: z.string().url(),
+  tauri: z.literal('ready')
 });

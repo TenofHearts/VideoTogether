@@ -1,6 +1,19 @@
-import type { DatabaseContext } from '../db/database.js';
+import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
+import { createWriteStream, mkdirSync, rmSync } from 'node:fs';
+import { basename, extname, resolve } from 'node:path';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
-import type { Media, Subtitle } from '../types/models.js';
+import type { AppEnv } from '../config/env.js';
+import type { DatabaseContext } from '../db/database.js';
+import { HttpError } from '../lib/errors.js';
+import type {
+  Media,
+  MediaListResponse,
+  MediaOperationResponse,
+  Subtitle
+} from '../types/models.js';
 
 type MediaRow = {
   id: string;
@@ -13,6 +26,7 @@ type MediaRow = {
   width: number | null;
   height: number | null;
   hls_manifest_path: string | null;
+  processing_error: string | null;
   status: Media['status'];
   created_at: string;
 };
@@ -28,6 +42,23 @@ type SubtitleRow = {
   is_default: number;
 };
 
+type ProbeStream = {
+  codec_type?: string;
+  codec_name?: string;
+  width?: number;
+  height?: number;
+};
+
+type ProbeFormat = {
+  duration?: string;
+  format_name?: string;
+};
+
+type ProbeResult = {
+  streams?: ProbeStream[];
+  format?: ProbeFormat;
+};
+
 function mapMedia(row: MediaRow): Media {
   return {
     id: row.id,
@@ -40,6 +71,7 @@ function mapMedia(row: MediaRow): Media {
     width: row.width,
     height: row.height,
     hlsManifestPath: row.hls_manifest_path,
+    processingError: row.processing_error,
     status: row.status,
     createdAt: row.created_at
   };
@@ -58,9 +90,107 @@ function mapSubtitle(row: SubtitleRow): Subtitle {
   };
 }
 
+function sanitizeFileName(fileName: string): string {
+  const baseName = basename(fileName).trim();
+  const extension = extname(baseName).slice(0, 16).replace(/[^.\w-]/g, '');
+  const nameWithoutExtension = baseName.slice(
+    0,
+    baseName.length - extname(baseName).length
+  );
+  const sanitizedName = nameWithoutExtension
+    .replace(/[^\w.-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 120);
+
+  return `${sanitizedName || 'media'}${extension}`;
+}
+
+function toProcessingErrorMessage(error: unknown): string {
+  if (error instanceof HttpError) {
+    return error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Unexpected media processing error';
+}
+
+function buildUrlFromBase(baseUrl: string, relativePath: string): string {
+  const normalizedBase = new URL(baseUrl);
+  const normalizedPath = normalizedBase.pathname.endsWith('/')
+    ? normalizedBase.pathname
+    : `${normalizedBase.pathname}/`;
+  const sanitizedRelativePath = relativePath.replace(/^\/+/, '');
+
+  normalizedBase.pathname = `${normalizedPath}${sanitizedRelativePath}`;
+  normalizedBase.search = '';
+  normalizedBase.hash = '';
+
+  return normalizedBase.toString();
+}
+
+function createPlayerUrl(webOrigin: string, mediaId: string): string {
+  const playerUrl = new URL(buildUrlFromBase(webOrigin, ''));
+  playerUrl.searchParams.set('mediaId', mediaId);
+
+  return playerUrl.toString();
+}
+
+function createManifestUrl(
+  publicBaseUrl: string,
+  media: Pick<Media, 'id' | 'hlsManifestPath'>
+): string | null {
+  if (!media.hlsManifestPath) {
+    return null;
+  }
+
+  return buildUrlFromBase(
+    publicBaseUrl,
+    `media/${media.id}/${media.hlsManifestPath}`
+  );
+}
+
+async function runCommand(command: string, args: string[]): Promise<string> {
+  return new Promise((resolveCommand, rejectCommand) => {
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+    });
+
+    child.stderr?.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', (error) => {
+      rejectCommand(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolveCommand(stdout);
+        return;
+      }
+
+      rejectCommand(
+        new Error(stderr.trim() || `${command} exited with code ${code ?? 1}`)
+      );
+    });
+  });
+}
+
 export type MediaService = ReturnType<typeof createMediaService>;
 
-export function createMediaService(database: DatabaseContext) {
+export function createMediaService(database: DatabaseContext, env: AppEnv) {
+  const activeProcessingJobs = new Map<string, Promise<void>>();
   const getMediaStatement = database.connection.prepare(`
     SELECT
       id,
@@ -73,10 +203,31 @@ export function createMediaService(database: DatabaseContext) {
       width,
       height,
       hls_manifest_path,
+      processing_error,
       status,
       created_at
     FROM media
     WHERE id = ?
+  `);
+
+  const listMediaStatement = database.connection.prepare(`
+    SELECT
+      id,
+      original_file_name,
+      source_path,
+      duration_ms,
+      container,
+      video_codec,
+      audio_codec,
+      width,
+      height,
+      hls_manifest_path,
+      processing_error,
+      status,
+      created_at
+    FROM media
+    ORDER BY created_at DESC
+    LIMIT ?
   `);
 
   const listSubtitlesForMediaStatement = database.connection.prepare(`
@@ -108,7 +259,169 @@ export function createMediaService(database: DatabaseContext) {
     WHERE id = ?
   `);
 
-  return {
+  const insertMediaStatement = database.connection.prepare(`
+    INSERT INTO media (
+      id,
+      original_file_name,
+      source_path,
+      duration_ms,
+      container,
+      video_codec,
+      audio_codec,
+      width,
+      height,
+      hls_manifest_path,
+      processing_error,
+      status,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const updateMediaMetadataStatement = database.connection.prepare(`
+    UPDATE media
+    SET
+      duration_ms = ?,
+      container = ?,
+      video_codec = ?,
+      audio_codec = ?,
+      width = ?,
+      height = ?
+    WHERE id = ?
+  `);
+
+  const updateMediaStatusStatement = database.connection.prepare(`
+    UPDATE media
+    SET
+      status = ?,
+      hls_manifest_path = ?,
+      processing_error = ?
+    WHERE id = ?
+  `);
+
+  async function probeMedia(media: Media) {
+    const output = await runCommand(env.mediaProcessing.ffprobePath, [
+      '-v',
+      'error',
+      '-show_streams',
+      '-show_format',
+      '-print_format',
+      'json',
+      media.sourcePath
+    ]);
+
+    const probe = JSON.parse(output) as ProbeResult;
+    const streams = probe.streams ?? [];
+    const videoStream = streams.find((stream) => stream.codec_type === 'video');
+    const audioStream = streams.find((stream) => stream.codec_type === 'audio');
+    const durationMs =
+      probe.format?.duration && Number.isFinite(Number(probe.format.duration))
+        ? Math.round(Number(probe.format.duration) * 1000)
+        : null;
+
+    if (!videoStream) {
+      throw new HttpError(415, 'Unsupported media file: no video stream found');
+    }
+
+    updateMediaMetadataStatement.run(
+      durationMs,
+      probe.format?.format_name ?? null,
+      videoStream.codec_name ?? null,
+      audioStream?.codec_name ?? null,
+      videoStream.width ?? null,
+      videoStream.height ?? null,
+      media.id
+    );
+  }
+
+  async function processMediaRecord(mediaId: string) {
+    const media = service.getMediaById(mediaId);
+
+    if (!media) {
+      throw new HttpError(404, 'Media not found');
+    }
+
+    updateMediaStatusStatement.run('processing', null, null, mediaId);
+
+    try {
+      await probeMedia(media);
+
+      const outputDirectory = resolve(env.storage.hlsDir, mediaId);
+      rmSync(outputDirectory, {
+        recursive: true,
+        force: true
+      });
+      mkdirSync(outputDirectory, { recursive: true });
+
+      await runCommand(env.mediaProcessing.ffmpegPath, [
+        '-y',
+        '-i',
+        media.sourcePath,
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a:0?',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        '-crf',
+        '23',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        '-ac',
+        '2',
+        '-sn',
+        '-f',
+        'hls',
+        '-hls_time',
+        '6',
+        '-hls_list_size',
+        '0',
+        '-hls_playlist_type',
+        'vod',
+        '-hls_flags',
+        'independent_segments',
+        '-hls_segment_filename',
+        resolve(outputDirectory, 'segment-%03d.ts'),
+        resolve(outputDirectory, 'master.m3u8')
+      ]);
+
+      updateMediaStatusStatement.run('ready', 'master.m3u8', null, mediaId);
+    } catch (error) {
+      updateMediaStatusStatement.run(
+        'error',
+        null,
+        toProcessingErrorMessage(error),
+        mediaId
+      );
+    }
+  }
+
+  function buildOperationResponse(
+    media: Media,
+    processingQueued: boolean
+  ): MediaOperationResponse {
+    return {
+      media,
+      manifestUrl: createManifestUrl(env.publicBaseUrl, media),
+      playerUrl: createPlayerUrl(env.webOrigin, media.id),
+      processingQueued
+    };
+  }
+
+  const service = {
+    listRecentMedia(limit = 12): MediaListResponse {
+      const rows = listMediaStatement.all(limit) as MediaRow[];
+
+      return {
+        media: rows.map((row) => mapMedia(row))
+      };
+    },
+
     getMediaById(mediaId: string): Media | null {
       const row = getMediaStatement.get(mediaId) as MediaRow | undefined;
 
@@ -127,7 +440,87 @@ export function createMediaService(database: DatabaseContext) {
       const rows = listSubtitlesForMediaStatement.all(mediaId) as SubtitleRow[];
 
       return rows.map((row) => mapSubtitle(row));
+    },
+
+    async importUploadedMedia(input: {
+      fileName: string;
+      stream: Readable;
+      autoProcess?: boolean;
+    }): Promise<MediaOperationResponse> {
+      const mediaId = randomUUID();
+      const sanitizedFileName = sanitizeFileName(input.fileName);
+      const storedFilePath = resolve(
+        env.storage.mediaDir,
+        `${mediaId}-${sanitizedFileName}`
+      );
+      const createdAt = new Date().toISOString();
+
+      try {
+        await pipeline(input.stream, createWriteStream(storedFilePath));
+      } catch (error) {
+        rmSync(storedFilePath, { force: true });
+        throw error;
+      }
+
+      insertMediaStatement.run(
+        mediaId,
+        sanitizedFileName,
+        storedFilePath,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        'pending',
+        createdAt
+      );
+
+      const media = service.getMediaById(mediaId);
+
+      if (!media) {
+        throw new HttpError(500, 'Media import completed but record was missing');
+      }
+
+      const processingQueued =
+        input.autoProcess === false ? false : service.startProcessing(mediaId);
+      const latestMedia = service.getMediaById(mediaId) ?? media;
+
+      return buildOperationResponse(latestMedia, processingQueued);
+    },
+
+    startProcessing(mediaId: string): boolean {
+      if (activeProcessingJobs.has(mediaId)) {
+        return false;
+      }
+
+      const processingJob = processMediaRecord(mediaId).finally(() => {
+        activeProcessingJobs.delete(mediaId);
+      });
+
+      activeProcessingJobs.set(mediaId, processingJob);
+
+      return true;
+    },
+
+    requestProcessing(mediaId: string): MediaOperationResponse {
+      const media = service.getMediaById(mediaId);
+
+      if (!media) {
+        throw new HttpError(404, 'Media not found');
+      }
+
+      const processingQueued = service.startProcessing(mediaId);
+      const latestMedia = service.getMediaById(mediaId) ?? media;
+
+      return buildOperationResponse(latestMedia, processingQueued);
     }
   };
+
+  return service;
 }
+
+
 

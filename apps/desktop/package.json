@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader runner",
-    "build": "tsc -p tsconfig.json && vite build",
+    "dev": "vite --configLoader native",
+    "build": "tsc -p tsconfig.json && vite build --configLoader native",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "tauri:dev": "tauri dev",
@@ -25,5 +25,3 @@
     "vite": "^6.2.2"
   }
 }
-
-

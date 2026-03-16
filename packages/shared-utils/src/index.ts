@@ -12,3 +12,17 @@ export function formatTimestamp(value: string): string {
     timeStyle: 'medium'
   }).format(new Date(value));
 }
+
+export function buildUrlFromBase(baseUrl: string, relativePath: string): string {
+  const normalizedBase = new URL(baseUrl);
+  const normalizedPath = normalizedBase.pathname.endsWith('/')
+    ? normalizedBase.pathname
+    : `${normalizedBase.pathname}/`;
+  const sanitizedRelativePath = relativePath.replace(/^\/+/, '');
+
+  normalizedBase.pathname = `${normalizedPath}${sanitizedRelativePath}`;
+  normalizedBase.search = '';
+  normalizedBase.hash = '';
+
+  return normalizedBase.toString();
+}

@@ -39,6 +39,7 @@ export type Media = {
   width: number | null;
   height: number | null;
   hlsManifestPath: string | null;
+  processingError: string | null;
   status: MediaStatus;
   createdAt: string;
 };
@@ -69,6 +70,17 @@ export type RoomLookupResponse = {
   socketPath: string;
 };
 
+export type MediaOperationResponse = {
+  media: Media;
+  manifestUrl: string | null;
+  playerUrl: string;
+  processingQueued: boolean;
+};
+
+export type MediaListResponse = {
+  media: Media[];
+};
+
 export type SystemStatus = {
   apiBaseUrl: string;
   webUrl: string;
@@ -90,3 +102,5 @@ export type SystemStatus = {
     detail: string;
   };
 };
+
+export type DesktopStatus = Pick<SystemStatus, 'apiBaseUrl' | 'webUrl' | 'tauri'>;

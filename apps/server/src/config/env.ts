@@ -39,7 +39,9 @@ const envSchema = z.object({
   HLS_OUTPUT_DIR: z.string().optional(),
   MEDIA_INPUT_DIR: z.string().optional(),
   SUBTITLE_DIR: z.string().optional(),
-  TEMP_DIR: z.string().optional()
+  TEMP_DIR: z.string().optional(),
+  FFMPEG_PATH: z.string().default('ffmpeg'),
+  FFPROBE_PATH: z.string().default('ffprobe')
 });
 
 export type AppEnv = ReturnType<typeof loadEnv>;
@@ -65,6 +67,10 @@ export function loadEnv() {
         parsedEnv.SUBTITLE_DIR ?? getDefaultStoragePath('subtitles'),
       tempDir: parsedEnv.TEMP_DIR ?? getDefaultStoragePath('temp')
     },
+    mediaProcessing: {
+      ffmpegPath: parsedEnv.FFMPEG_PATH,
+      ffprobePath: parsedEnv.FFPROBE_PATH
+    },
     realtime: {
       transport: 'socket.io' as const,
       path: '/socket.io'
@@ -79,4 +85,3 @@ export function ensureStoragePaths(env: AppEnv): void {
   mkdirSync(env.storage.subtitleDir, { recursive: true });
   mkdirSync(env.storage.tempDir, { recursive: true });
 }
-

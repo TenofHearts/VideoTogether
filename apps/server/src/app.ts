@@ -12,12 +12,20 @@ import { createMediaService } from './services/media-service.js';
 import { createRoomService } from './services/room-service.js';
 import { bootstrapRealtime } from './sockets/bootstrap.js';
 
+const desktopOrigins = new Set([
+  'tauri://localhost',
+  'http://tauri.localhost',
+  'https://tauri.localhost',
+  'http://localhost:4200',
+  'http://127.0.0.1:4200'
+]);
+
 export async function buildApp() {
   const env = loadEnv();
   ensureStoragePaths(env);
 
   const database = createDatabase(env.databasePath);
-  const mediaService = createMediaService(database);
+  const mediaService = createMediaService(database, env);
   const roomService = createRoomService(database, mediaService, env);
 
   const app = Fastify({
@@ -25,7 +33,14 @@ export async function buildApp() {
   });
 
   await app.register(cors, {
-    origin: [env.webOrigin]
+    origin(origin, callback) {
+      if (!origin || origin === env.webOrigin || desktopOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origin not allowed'), false);
+    }
   });
 
   const realtime = await bootstrapRealtime(app, env);
