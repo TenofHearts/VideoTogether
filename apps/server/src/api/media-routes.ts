@@ -122,6 +122,16 @@ export async function registerMediaRoutes(
     return reply.status(202).send(result);
   });
 
+  app.delete<{
+    Params: {
+      id: string;
+    };
+  }>('/api/media/:id', async (request, reply) => {
+    dependencies.mediaService.deleteMedia(request.params.id);
+
+    return reply.status(204).send();
+  });
+
   app.get<{
     Params: {
       id: string;
@@ -141,3 +151,5 @@ export async function registerMediaRoutes(
     };
   });
 }
+
+

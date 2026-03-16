@@ -48,8 +48,22 @@ const schemaSql = `
     FOREIGN KEY (active_subtitle_id) REFERENCES subtitles(id) ON DELETE SET NULL
   );
 
+  CREATE TABLE IF NOT EXISTS participants (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    joined_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    socket_id TEXT,
+    connection_state TEXT NOT NULL,
+    FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_rooms_token ON rooms(token);
   CREATE INDEX IF NOT EXISTS idx_subtitles_media_id ON subtitles(media_id);
+  CREATE INDEX IF NOT EXISTS idx_participants_room_id ON participants(room_id);
+  CREATE INDEX IF NOT EXISTS idx_participants_socket_id ON participants(socket_id);
 `;
 
 export type DatabaseContext = {
@@ -71,7 +85,7 @@ export function createDatabase(databasePath: string): DatabaseContext {
 
 function ensureColumnExists(
   connection: DatabaseSync,
-  tableName: 'media' | 'rooms' | 'subtitles',
+  tableName: 'media' | 'rooms' | 'subtitles' | 'participants',
   columnName: string,
   columnDefinition: string
 ) {

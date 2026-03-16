@@ -4,7 +4,7 @@ export function getApiBaseUrl(explicitUrl?: string): string {
   }
 
   if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-    return window.location.protocol + '//' + window.location.hostname + ':3000';
+    return `${window.location.protocol}//${window.location.hostname}:3000`;
   }
 
   return 'http://localhost:3000';
@@ -29,4 +29,8 @@ export function buildUrlFromBase(baseUrl: string, relativePath: string): string 
   normalizedBase.hash = '';
 
   return normalizedBase.toString();
+}
+
+export function buildRoomUrl(baseUrl: string, token: string): string {
+  return buildUrlFromBase(baseUrl, `room/${token}`);
 }

@@ -715,6 +715,29 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - remote user joins room successfully
 - invalid / expired rooms are handled cleanly
 
+### Progress Notes
+- status: completed
+- completed:
+  - room creation now provisions a dedicated host participant and returns a `/room/:token` secret share URL
+  - participant persistence added with SQLite-backed host/guest records, connection state, and last-seen tracking
+  - room join endpoint added with token validation, invalid token handling, room expiration handling, and one-active-guest enforcement
+  - Socket.IO room presence now validates participant joins, tracks disconnects, and broadcasts room state plus participant join/leave events
+  - web app now supports dedicated secret-room routing, join gating, invalid/expired room messaging, and live participant presence
+  - desktop host flow now supports host display name, room expiration selection, `/room/:token` share links, and room participant polling
+  - desktop, web, and server now share a configurable `WEB_URL`, keeping locally generated secret room links aligned with the actual frontend origin during development
+- verified:
+  - `npm run build --workspace @videoshare/server` passes
+  - `npm run typecheck --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/server` passes
+  - `npm run typecheck --workspace @videoshare/web` passes
+  - `npm run lint --workspace @videoshare/web` passes
+  - `npm run build --workspace @videoshare/web` passes after rerunning outside the sandbox because the sandbox blocked Vite/esbuild child-process spawn with `EPERM`
+  - `npm run typecheck --workspace @videoshare/desktop` passes
+  - `npm run lint --workspace @videoshare/desktop` passes
+- acceptance completed on 2026-03-16:
+  - Phase 4 deliverables are considered done
+  - Phase 5 can start from the current repository state
+
 ---
 
 ## Phase 5 — Playback Synchronization
@@ -911,5 +934,7 @@ The MVP is complete when all of the following are true:
 - implement browser-first remote experience even though host uses Tauri
 - design code so remote desktop app can be added later without major backend changes
 - only the server backend runs on Docker, the application itself may run on the local computer. 
+
+
 
 

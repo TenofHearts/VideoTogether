@@ -59,14 +59,18 @@ function getStatusText(status: Media['status']): string {
   }
 }
 
-function buildPlayerUrl(baseUrl: string, mediaId: string, roomToken?: string): string {
+function buildPlayerUrl(baseUrl: string, mediaId: string): string {
   const url = new URL(baseUrl);
   url.searchParams.set('mediaId', mediaId);
+  return url.toString();
+}
 
-  if (roomToken) {
-    url.searchParams.set('roomToken', roomToken);
-  }
-
+function buildRoomPlayerUrl(baseUrl: string, token: string): string {
+  const url = new URL(baseUrl);
+  const normalizedPath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+  url.pathname = `${normalizedPath}room/${token}`;
+  url.search = '';
+  url.hash = '';
   return url.toString();
 }
 
@@ -80,6 +84,7 @@ function formatImportedAt(value: string): string {
 export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
+  const deletingMediaIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSubtitleFile, setSelectedSubtitleFile] = useState<File | null>(null);
@@ -95,7 +100,11 @@ export default function App() {
   const [subtitleUploadState, setSubtitleUploadState] = useState<UploadState>('idle');
   const [roomState, setRoomState] = useState<UploadState>('idle');
   const [roomSubtitleState, setRoomSubtitleState] = useState<UploadState>('idle');
+  const [deleteState, setDeleteState] = useState<UploadState>('idle');
+  const [deleteConfirmArmed, setDeleteConfirmArmed] = useState(false);
   const [processingQueued, setProcessingQueued] = useState(false);
+  const [hostDisplayName, setHostDisplayName] = useState('Host');
+  const [roomExpiryHours, setRoomExpiryHours] = useState('24');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -260,15 +269,69 @@ export default function App() {
     setSelectedRoomSubtitleId(room?.room.activeSubtitleId ?? null);
   }, [room]);
 
+  useEffect(() => {
+    if (!status || !room) {
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      void fetch(`${status.apiBaseUrl}/api/rooms/${room.room.token}`)
+        .then(async (response) => {
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+            throw new Error(payload?.message ?? `Room lookup failed with ${response.status}`);
+          }
+
+          return (await response.json()) as RoomLookupResponse;
+        })
+        .then((payload) => {
+          if (!cancelled) {
+            if (deletingMediaIdRef.current && payload.room.activeMediaId === null) {
+              setRoom(null);
+              setSelectedRoomSubtitleId(null);
+              return;
+            }
+
+            setRoom(payload);
+            setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
+          }
+        })
+        .catch((reason) => {
+          if (!cancelled) {
+            if (deletingMediaIdRef.current && room.room.activeMediaId === deletingMediaIdRef.current) {
+              return;
+            }
+
+            setError(reason instanceof Error ? reason.message : 'Failed to refresh room state');
+          }
+        });
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [status, room?.room.token]);
+
+  useEffect(() => {
+    setDeleteConfirmArmed(false);
+    setDeleteState('idle');
+
+    if (media?.id) {
+      deletingMediaIdRef.current = null;
+    }
+  }, [media?.id]);
+
   const playerUrl = media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
   const lanPlayerUrl = media && status?.lanWebUrl
     ? buildPlayerUrl(status.lanWebUrl, media.id)
     : null;
-  const roomPlayerUrl = room && room.media && status
-    ? buildPlayerUrl(status.webUrl, room.media.id, room.room.token)
+  const roomPlayerUrl = room && status
+    ? buildRoomPlayerUrl(status.webUrl, room.room.token)
     : null;
-  const lanRoomPlayerUrl = room && room.media && status?.lanWebUrl
-    ? buildPlayerUrl(status.lanWebUrl, room.media.id, room.room.token)
+  const lanRoomPlayerUrl = room && status?.lanWebUrl
+    ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
     : null;
   const manifestUrl =
     media && status && media.hlsManifestPath
@@ -289,6 +352,8 @@ export default function App() {
     setRoom(null);
     setSubtitles([]);
     setSelectedRoomSubtitleId(null);
+    setDeleteConfirmArmed(false);
+    setDeleteState('idle');
 
     try {
       const response = await fetch(`${status.apiBaseUrl}/api/media/${mediaId}`);
@@ -417,6 +482,10 @@ export default function App() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
+          hostDisplayName: hostDisplayName.trim() || 'Host',
+          expiresAt: roomExpiryHours === 'never'
+            ? null
+            : new Date(Date.now() + Number(roomExpiryHours) * 60 * 60 * 1000).toISOString(),
           activeMediaId: media.id,
           activeSubtitleId: defaultSubtitle?.id ?? null
         })
@@ -431,7 +500,7 @@ export default function App() {
       setRoom(payload);
       setRoomState('success');
       setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
-      setMessage('Room created. Share the room player URL with the second viewer.');
+      setMessage('Room created. Share the secret room URL with the second viewer.');
     } catch (reason) {
       setRoomState('error');
       setError(reason instanceof Error ? reason.message : 'Room creation failed');
@@ -518,15 +587,78 @@ export default function App() {
     }
   }
 
+  async function deleteSelectedMedia() {
+    if (!status || !media) {
+      return;
+    }
+
+    if (!deleteConfirmArmed) {
+      setDeleteConfirmArmed(true);
+      setMessage(`Click delete again to remove ${media.originalFileName}, its HLS output, and all attached subtitles.`);
+      return;
+    }
+
+    deletingMediaIdRef.current = media.id;
+    setDeleteState('uploading');
+    setDeleteConfirmArmed(false);
+    setError(null);
+    setMessage('Deleting media, subtitles, and generated playback files...');
+
+    try {
+      const response = await fetch(`${status.apiBaseUrl}/api/media/${media.id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+        throw new Error(payload?.message ?? `Delete failed with ${response.status}`);
+      }
+
+      setRecentMedia((current) => ({
+        kind: 'success',
+        data: current.data.filter((item) => item.id !== media.id)
+      }));
+      setMedia(null);
+      setRoom(null);
+      setSubtitles([]);
+      setSelectedFile(null);
+      setSelectedSubtitleFile(null);
+      setSelectedRoomSubtitleId(null);
+      setProcessingQueued(false);
+      setUploadState('idle');
+      setSubtitleUploadState('idle');
+      setRoomState('idle');
+      setRoomSubtitleState('idle');
+      setDeleteState('success');
+      setMessage('Media deleted successfully.');
+
+      void fetch(`${status.apiBaseUrl}/api/media`)
+        .then(async (recentResponse) => {
+          if (!recentResponse.ok) {
+            return;
+          }
+
+          const recentPayload = (await recentResponse.json()) as MediaListResponse;
+          setRecentMedia({ kind: 'success', data: recentPayload.media });
+        })
+        .catch(() => {
+          // Ignore best-effort refresh failures after a confirmed delete.
+        });
+    } catch (reason) {
+      deletingMediaIdRef.current = null;
+      setDeleteState('error');
+      setError(reason instanceof Error ? reason.message : 'Delete failed');
+    }
+  }
   return (
     <main className="shell">
       <section className="panel">
         <div className="hero">
           <div>
-            <p className="eyebrow">Phase 3 Host Flow</p>
-            <h1>Import media, attach subtitles, and create a shared room from the desktop app.</h1>
+            <p className="eyebrow">Phase 4 Host Flow</p>
+            <h1>Import media, create a secret room, and track who joined from the desktop app.</h1>
             <p className="copy">
-              This dashboard now supports subtitle uploads in <span className="font-mono">.srt</span>, <span className="font-mono">.vtt</span>, and <span className="font-mono">.ass</span>, converts them to WebVTT for playback, and lets you update the room's active subtitle after the room is created.
+              This dashboard now creates dedicated <span className="font-mono">/room/&lt;token&gt;</span> links, lets you set room expiration, and refreshes participant presence while the room is active.
             </p>
           </div>
 
@@ -716,10 +848,10 @@ export default function App() {
         {room && (
           <section className="uploadPanel">
             <div>
-              <p className="sectionEyebrow">Update room subtitle</p>
-              <h2>Change the subtitle used by the shared room</h2>
+              <p className="sectionEyebrow">Room state</p>
+              <h2>Manage the active secret room</h2>
               <p className="sectionCopy">
-                Pick which subtitle track should be active for the room. The browser player opened with this room token will follow this selection.
+                Update the shared subtitle, review the expiration, and watch the participant list refresh while this room is open.
               </p>
             </div>
 
@@ -756,6 +888,8 @@ export default function App() {
                 Current room subtitle: {room.subtitles.find((subtitle) => subtitle.id === room.room.activeSubtitleId)?.label ?? 'None'}
               </p>
               <p className="fileMeta">Room token: {room.room.token}</p>
+              <p className="fileMeta">Expires: {room.room.expiresAt ? formatImportedAt(room.room.expiresAt) : 'No expiration set'}</p>
+              <p className="fileMeta">Participants: {room.participants.map((participant) => `${participant.displayName} (${participant.role}, ${participant.connectionState})`).join(' • ') || 'Waiting for viewers'}</p>
             </div>
           </section>
         )}
@@ -795,16 +929,53 @@ export default function App() {
                 <p className="inlineError">{media.processingError}</p>
               )}
 
+              <div className="fileSummary">
+                <p className="fileName">Room host settings</p>
+                <div className="actionsRow roomSubtitleRow">
+                  <input
+                    className="selectInput"
+                    maxLength={48}
+                    onChange={(event) => setHostDisplayName(event.target.value)}
+                    placeholder="Host display name"
+                    value={hostDisplayName}
+                  />
+                  <select
+                    className="selectInput"
+                    onChange={(event) => setRoomExpiryHours(event.target.value)}
+                    value={roomExpiryHours}
+                  >
+                    <option value="6">Expires in 6 hours</option>
+                    <option value="24">Expires in 24 hours</option>
+                    <option value="72">Expires in 72 hours</option>
+                    <option value="never">No expiration</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="actionsRow leftAligned">
                 <button
                   className="secondaryButton"
-                  disabled={uploadState === 'uploading'}
+                  disabled={uploadState === 'uploading' || deleteState === 'uploading'}
                   onClick={() => {
                     void retryProcessing();
                   }}
                   type="button"
                 >
                   Retry processing
+                </button>
+                <button
+                  className="secondaryButton"
+                  disabled={deleteState === 'uploading' || uploadState === 'uploading'}
+                  onClick={() => {
+                    void deleteSelectedMedia();
+                  }}
+                  type="button"
+                >
+                  {deleteState === 'uploading'
+                    ? 'Deleting...'
+                    : deleteConfirmArmed
+                      ? 'Confirm delete'
+                      : 'Delete media'}
                 </button>
                 <button
                   className="secondaryButton"
@@ -867,7 +1038,7 @@ export default function App() {
               </div>
 
               <div className="linkGroup">
-                <span className="linkLabel">Configured room URL</span>
+                <span className="linkLabel">Configured secret room URL</span>
                 <p className="linkValue">{room?.shareUrl ?? 'Create a room after processing completes'}</p>
                 {room?.shareUrl && (
                   <button className="ghostButton" onClick={() => void copyText(room.shareUrl)} type="button">
@@ -877,8 +1048,8 @@ export default function App() {
               </div>
 
               <div className="linkGroup">
-                <span className="linkLabel">Local room player URL</span>
-                <p className="linkValue">{roomPlayerUrl ?? 'Create a room to get a synchronized subtitle player link'}</p>
+                <span className="linkLabel">Local secret room URL</span>
+                <p className="linkValue">{roomPlayerUrl ?? 'Create a room to get the dedicated /room/<token> link'}</p>
                 {roomPlayerUrl && (
                   <button className="ghostButton" onClick={() => void copyText(roomPlayerUrl)} type="button">
                     Copy local room player URL
@@ -887,11 +1058,11 @@ export default function App() {
               </div>
 
               <div className="linkGroup">
-                <span className="linkLabel">LAN room player URL</span>
+                <span className="linkLabel">LAN secret room URL</span>
                 <p className="linkValue">{lanRoomPlayerUrl ?? 'Create a room and make sure LAN detection succeeds'}</p>
                 {lanRoomPlayerUrl && (
                   <button className="ghostButton" onClick={() => void copyText(lanRoomPlayerUrl)} type="button">
-                    Copy LAN room player URL
+                    Copy LAN secret room URL
                   </button>
                 )}
               </div>
@@ -921,6 +1092,19 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

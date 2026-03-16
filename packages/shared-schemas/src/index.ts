@@ -15,13 +15,17 @@ export const mediaStatusSchema = z.enum(['pending', 'processing', 'ready', 'erro
 
 export const subtitleFormatSchema = z.enum(['srt', 'vtt', 'ass']);
 
+export const participantRoleSchema = z.enum(['host', 'guest']);
+
+export const participantConnectionStateSchema = z.enum(['connected', 'disconnected']);
+
 export const roomSchema = z.object({
   id: z.string().uuid(),
   token: z.string().min(16),
   createdAt: z.string().datetime(),
   expiresAt: z.string().datetime().nullable(),
   status: roomStatusSchema,
-  hostClientId: z.string().nullable(),
+  hostClientId: z.string().uuid().nullable(),
   currentPlaybackTime: z.number().nonnegative(),
   playbackState: playbackStateSchema,
   playbackRate: z.number().positive(),
@@ -57,19 +61,41 @@ export const subtitleSchema = z.object({
   isDefault: z.boolean()
 });
 
+export const participantSchema = z.object({
+  id: z.string().uuid(),
+  roomId: z.string().uuid(),
+  displayName: z.string().min(1),
+  role: participantRoleSchema,
+  joinedAt: z.string().datetime(),
+  lastSeenAt: z.string().datetime(),
+  socketId: z.string().nullable(),
+  connectionState: participantConnectionStateSchema
+});
+
 export const createRoomRequestSchema = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
   hostClientId: z.string().min(1).nullable().optional(),
+  hostDisplayName: z.string().min(1).max(48).nullable().optional(),
   activeMediaId: z.string().uuid().nullable().optional(),
   activeSubtitleId: z.string().uuid().nullable().optional()
+});
+
+export const joinRoomRequestSchema = z.object({
+  displayName: z.string().trim().min(1).max(48),
+  participantId: z.string().uuid().nullable().optional()
 });
 
 export const roomLookupResponseSchema = z.object({
   room: roomSchema,
   media: mediaSchema.nullable(),
   subtitles: z.array(subtitleSchema),
+  participants: z.array(participantSchema),
   shareUrl: z.string().url(),
   socketPath: z.string().min(1)
+});
+
+export const roomJoinResponseSchema = roomLookupResponseSchema.extend({
+  participant: participantSchema
 });
 
 export const mediaOperationResponseSchema = z.object({

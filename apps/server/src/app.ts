@@ -34,6 +34,7 @@ export async function buildApp() {
   });
 
   await app.register(cors, {
+    methods: ['GET', 'HEAD', 'POST', 'DELETE', 'OPTIONS'],
     origin(origin, callback) {
       if (
         !origin ||
@@ -48,7 +49,9 @@ export async function buildApp() {
     }
   });
 
-  const realtime = await bootstrapRealtime(app, env);
+  const realtime = await bootstrapRealtime(app, env, {
+    roomService
+  });
 
   await registerHealthRoutes(app, {
     env,

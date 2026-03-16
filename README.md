@@ -4,14 +4,14 @@ Private two-person movie sharing app scaffold for the plan in `Plan.md`.
 
 ## Current status
 
-The repository now includes the completed foundations for Phase 0, Phase 1, Phase 2, and Phase 3:
+The repository now includes the completed foundations for Phase 0, Phase 1, Phase 2, Phase 3, and Phase 4:
 
 - npm workspace monorepo structure
 - Tauri v2 desktop host shell
 - React + Vite + Tailwind web app
 - Fastify server with SQLite-backed room persistence
-- room creation, lookup, and close APIs
-- Socket.IO realtime bootstrap and client handshake check
+- room creation, lookup, join, and close APIs
+- Socket.IO realtime bootstrap, room presence, and client handshake checks
 - media import endpoint with binary upload support
 - ffprobe metadata extraction and FFmpeg HLS processing pipeline
 - HLS asset serving for generated manifests and segments
@@ -22,8 +22,11 @@ The repository now includes the completed foundations for Phase 0, Phase 1, Phas
 - subtitle upload pipeline for `.srt`, `.vtt`, and `.ass`
 - server-side subtitle conversion to served WebVTT output
 - browser subtitle track loading and room-backed subtitle selection
-- desktop controls for subtitle upload, room subtitle updates, and room creation
+- dedicated `/room/:token` secret room join flow with invalid/expired room handling
+- SQLite-backed participant tracking with realtime host/guest presence
+- desktop controls for subtitle upload, room subtitle updates, room expiration, and secret room creation
 - desktop reuse flow for previously uploaded media from earlier sessions
+- desktop host can delete uploaded media and clean up generated playback artifacts
 - local and LAN playback URLs for host-machine and same-network access during development
 - shared packages for types, schemas, and utilities
 - Dockerfile and Docker Compose for the server
@@ -57,6 +60,7 @@ You need to install project dependencies yourself:
   - this now includes the bundled `hls.js` dependency used by the web player
 - `ffmpeg` and `ffprobe`
 - Tauri system prerequisites for Windows if not already installed
+- set `WEB_URL` consistently for `web`, `desktop`, and `server` if you do not want to use the default `http://localhost:5173`
 
 ## Common commands
 
@@ -74,7 +78,8 @@ npm run docker:up
 3. Start the desktop shell with `npm run dev:desktop`
 4. In the desktop app, either pick a local movie to upload or select a previously uploaded movie from the recent media list
 5. Wait for processing to finish if needed, then optionally upload subtitle files and create a room
-6. Use the generated local or LAN player URLs to open the web app and play the generated HLS stream
+6. Share the generated secret room URL with the second viewer, or open it yourself to test the join flow
+7. Use the generated local or LAN player URLs to open the web app and play the generated HLS stream
 
 ## Current endpoints
 
@@ -82,11 +87,13 @@ npm run docker:up
 - `GET /api/system/status`
 - `POST /api/rooms`
 - `GET /api/rooms/:token`
+- `POST /api/rooms/:token/join`
 - `POST /api/rooms/:token/subtitle`
 - `POST /api/rooms/:token/close`
 - `GET /api/media`
 - `POST /api/media/import`
 - `GET /api/media/:id`
+- `DELETE /api/media/:id`
 - `POST /api/media/:id/process`
 - `POST /api/media/:id/subtitles`
 - `GET /api/media/:id/subtitles`
@@ -97,7 +104,7 @@ npm run docker:up
 
 - SQLite currently uses Node 22 built-in `node:sqlite`, so you may see an experimental warning at runtime.
 - The web player now uses a bundled `hls.js` dependency instead of loading it from a public CDN at runtime.
-- `PUBLIC_BASE_URL` and `WEB_ORIGIN` can include a subpath such as `/videoshare/`; generated playback URLs now preserve that prefix.
+- `PUBLIC_BASE_URL` and `WEB_URL` can include a subpath such as `/videoshare/`; generated playback URLs now preserve that prefix.
 - During development, the desktop app now shows both local and LAN URLs; LAN URLs are intended for devices on the same network, while `PUBLIC_BASE_URL` remains the path for future ngrok/public sharing.
 - On this machine, the desktop Vite dev server works more reliably with `vite --configLoader native`.
 - If the desktop or web Vite page behaves strangely after config changes, clearing `apps/desktop/node_modules/.vite` or `apps/web/node_modules/.vite` can help.

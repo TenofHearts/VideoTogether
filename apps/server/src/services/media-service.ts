@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createReadStream, createWriteStream, mkdirSync, rmSync } from 'node:fs';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { basename, extname, resolve } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -213,6 +213,19 @@ function createSubtitleLabel(fileName: string): string {
   return cleanName.length > 0 ? cleanName : 'Subtitle track';
 }
 
+function removePathOrThrow(path: string, options?: { recursive?: boolean }) {
+  const existedBefore = existsSync(path);
+
+  rmSync(path, {
+    force: true,
+    recursive: options?.recursive ?? false
+  });
+
+  if (existedBefore && existsSync(path)) {
+    throw new HttpError(500, `Failed to remove storage path: ${path}`);
+  }
+}
+
 export type MediaService = ReturnType<typeof createMediaService>;
 
 export function createMediaService(database: DatabaseContext, env: AppEnv) {
@@ -334,6 +347,11 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       status = ?,
       hls_manifest_path = ?,
       processing_error = ?
+    WHERE id = ?
+  `);
+
+  const deleteMediaStatement = database.connection.prepare(`
+    DELETE FROM media
     WHERE id = ?
   `);
 
@@ -630,6 +648,39 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       return buildOperationResponse(latestMedia, processingQueued);
     },
 
+    deleteMedia(mediaId: string): void {
+      const media = service.getMediaById(mediaId);
+
+      if (!media) {
+        throw new HttpError(404, 'Media not found');
+      }
+
+      if (activeProcessingJobs.has(mediaId)) {
+        throw new HttpError(409, 'Cannot delete media while processing is active');
+      }
+
+      const subtitles = service.listSubtitlesByMediaId(mediaId);
+
+      removePathOrThrow(media.sourcePath);
+      removePathOrThrow(resolve(env.storage.hlsDir, mediaId), {
+        recursive: true
+      });
+
+      for (const subtitle of subtitles) {
+        removePathOrThrow(subtitle.sourcePath);
+
+        if (subtitle.servedPath) {
+          removePathOrThrow(subtitle.servedPath);
+        }
+      }
+
+      const result = deleteMediaStatement.run(mediaId);
+
+      if (result.changes === 0) {
+        throw new HttpError(404, 'Media not found');
+      }
+    },
+
     buildPlayerUrl(mediaId: string, roomToken?: string): string {
       return createPlayerUrl(env.webOrigin, mediaId, roomToken);
     },
@@ -641,4 +692,6 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
 
   return service;
 }
+
+
 

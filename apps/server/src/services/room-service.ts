@@ -7,7 +7,10 @@ import type { MediaService } from './media-service.js';
 
 import type {
   CreateRoomRequest,
+  JoinRoomRequest,
+  Participant,
   Room,
+  RoomJoinResponse,
   RoomLookupResponse
 } from '../types/models.js';
 
@@ -24,6 +27,17 @@ type RoomRow = {
   last_state_updated_at: string;
   active_media_id: string | null;
   active_subtitle_id: string | null;
+};
+
+type ParticipantRow = {
+  id: string;
+  room_id: string;
+  display_name: string;
+  role: Participant['role'];
+  joined_at: string;
+  last_seen_at: string;
+  socket_id: string | null;
+  connection_state: Participant['connectionState'];
 };
 
 function mapRoom(row: RoomRow): Room {
@@ -43,8 +57,31 @@ function mapRoom(row: RoomRow): Room {
   };
 }
 
+function mapParticipant(row: ParticipantRow): Participant {
+  return {
+    id: row.id,
+    roomId: row.room_id,
+    displayName: row.display_name,
+    role: row.role,
+    joinedAt: row.joined_at,
+    lastSeenAt: row.last_seen_at,
+    socketId: row.socket_id,
+    connectionState: row.connection_state
+  };
+}
+
 function createRoomShareUrl(publicBaseUrl: string, token: string): string {
   return new URL(`/room/${token}`, publicBaseUrl).toString();
+}
+
+function normalizeDisplayName(value: string | null | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return fallback;
+  }
+
+  return trimmed.slice(0, 48);
 }
 
 export type RoomService = ReturnType<typeof createRoomService>;
@@ -89,9 +126,27 @@ export function createRoomService(
     WHERE token = ?
   `);
 
-  const closeRoomStatement = database.connection.prepare(`
+  const getRoomByIdStatement = database.connection.prepare(`
+    SELECT
+      id,
+      token,
+      created_at,
+      expires_at,
+      status,
+      host_client_id,
+      current_playback_time,
+      playback_state,
+      playback_rate,
+      last_state_updated_at,
+      active_media_id,
+      active_subtitle_id
+    FROM rooms
+    WHERE id = ?
+  `);
+
+  const updateRoomStatusStatement = database.connection.prepare(`
     UPDATE rooms
-    SET status = 'closed'
+    SET status = ?
     WHERE token = ?
   `);
 
@@ -102,6 +157,131 @@ export function createRoomService(
       last_state_updated_at = ?
     WHERE token = ?
   `);
+
+  const updateRoomHostStatement = database.connection.prepare(`
+    UPDATE rooms
+    SET host_client_id = ?
+    WHERE id = ?
+  `);
+
+  const listParticipantsByRoomIdStatement = database.connection.prepare(`
+    SELECT
+      id,
+      room_id,
+      display_name,
+      role,
+      joined_at,
+      last_seen_at,
+      socket_id,
+      connection_state
+    FROM participants
+    WHERE room_id = ?
+    ORDER BY CASE role WHEN 'host' THEN 0 ELSE 1 END, joined_at ASC
+  `);
+
+  const getParticipantByIdStatement = database.connection.prepare(`
+    SELECT
+      id,
+      room_id,
+      display_name,
+      role,
+      joined_at,
+      last_seen_at,
+      socket_id,
+      connection_state
+    FROM participants
+    WHERE id = ?
+  `);
+
+  const getParticipantBySocketIdStatement = database.connection.prepare(`
+    SELECT
+      id,
+      room_id,
+      display_name,
+      role,
+      joined_at,
+      last_seen_at,
+      socket_id,
+      connection_state
+    FROM participants
+    WHERE socket_id = ?
+  `);
+
+  const insertParticipantStatement = database.connection.prepare(`
+    INSERT INTO participants (
+      id,
+      room_id,
+      display_name,
+      role,
+      joined_at,
+      last_seen_at,
+      socket_id,
+      connection_state
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const refreshParticipantStatement = database.connection.prepare(`
+    UPDATE participants
+    SET
+      display_name = ?,
+      last_seen_at = ?,
+      socket_id = NULL,
+      connection_state = 'disconnected'
+    WHERE id = ?
+  `);
+
+  const connectParticipantStatement = database.connection.prepare(`
+    UPDATE participants
+    SET
+      last_seen_at = ?,
+      socket_id = ?,
+      connection_state = 'connected'
+    WHERE id = ?
+  `);
+
+  const disconnectParticipantStatement = database.connection.prepare(`
+    UPDATE participants
+    SET
+      last_seen_at = ?,
+      socket_id = NULL,
+      connection_state = 'disconnected'
+    WHERE id = ?
+  `);
+
+  const disconnectParticipantsByRoomIdStatement = database.connection.prepare(`
+    UPDATE participants
+    SET
+      last_seen_at = ?,
+      socket_id = NULL,
+      connection_state = 'disconnected'
+    WHERE room_id = ?
+  `);
+
+  const touchParticipantStatement = database.connection.prepare(`
+    UPDATE participants
+    SET last_seen_at = ?
+    WHERE id = ?
+  `);
+
+  function listParticipantsByRoomId(roomId: string): Participant[] {
+    const rows = listParticipantsByRoomIdStatement.all(roomId) as ParticipantRow[];
+    return rows.map((row) => mapParticipant(row));
+  }
+
+  function getRoomByTokenRecord(token: string): Room | null {
+    const row = getRoomByTokenStatement.get(token) as RoomRow | undefined;
+    return row ? mapRoom(row) : null;
+  }
+
+  function getRoomByIdRecord(roomId: string): Room | null {
+    const row = getRoomByIdStatement.get(roomId) as RoomRow | undefined;
+    return row ? mapRoom(row) : null;
+  }
+
+  function getParticipantById(participantId: string): Participant | null {
+    const row = getParticipantByIdStatement.get(participantId) as ParticipantRow | undefined;
+    return row ? mapParticipant(row) : null;
+  }
 
   function buildRoomLookupResponse(room: Room): RoomLookupResponse {
     const media = room.activeMediaId
@@ -115,21 +295,24 @@ export function createRoomService(
       room,
       media,
       subtitles,
+      participants: listParticipantsByRoomId(room.id),
       shareUrl: createRoomShareUrl(env.publicBaseUrl, room.token),
       socketPath: env.realtime.path
     };
   }
 
   function getValidatedRoom(token: string): Room {
-    const row = getRoomByTokenStatement.get(token) as RoomRow | undefined;
+    const room = getRoomByTokenRecord(token);
 
-    if (!row) {
+    if (!room) {
       throw new HttpError(404, 'Room not found');
     }
 
-    const room = mapRoom(row);
-
     if (room.expiresAt && new Date(room.expiresAt).getTime() <= Date.now()) {
+      if (room.status !== 'expired') {
+        updateRoomStatusStatement.run('expired', token);
+      }
+
       throw new HttpError(410, 'Room expired');
     }
 
@@ -137,7 +320,52 @@ export function createRoomService(
       throw new HttpError(410, 'Room closed');
     }
 
+    if (room.status === 'expired') {
+      throw new HttpError(410, 'Room expired');
+    }
+
     return room;
+  }
+
+  function createParticipantRecord(input: {
+    roomId: string;
+    displayName: string;
+    role: Participant['role'];
+    now: string;
+  }): Participant {
+    const participant: Participant = {
+      id: randomUUID(),
+      roomId: input.roomId,
+      displayName: input.displayName,
+      role: input.role,
+      joinedAt: input.now,
+      lastSeenAt: input.now,
+      socketId: null,
+      connectionState: 'disconnected'
+    };
+
+    insertParticipantStatement.run(
+      participant.id,
+      participant.roomId,
+      participant.displayName,
+      participant.role,
+      participant.joinedAt,
+      participant.lastSeenAt,
+      participant.socketId,
+      participant.connectionState
+    );
+
+    return participant;
+  }
+
+  function requireParticipantForRoom(participantId: string, roomId: string): Participant {
+    const participant = getParticipantById(participantId);
+
+    if (!participant || participant.roomId !== roomId) {
+      throw new HttpError(403, 'Participant session is not valid for this room');
+    }
+
+    return participant;
   }
 
   return {
@@ -166,7 +394,7 @@ export function createRoomService(
         createdAt: now,
         expiresAt: input.expiresAt ?? null,
         status: 'active',
-        hostClientId: input.hostClientId ?? null,
+        hostClientId: null,
         currentPlaybackTime: 0,
         playbackState: 'paused',
         playbackRate: 1,
@@ -190,11 +418,83 @@ export function createRoomService(
         room.activeSubtitleId
       );
 
-      return buildRoomLookupResponse(room);
+      const hostParticipant = createParticipantRecord({
+        roomId: room.id,
+        displayName: normalizeDisplayName(input.hostDisplayName, 'Host'),
+        role: 'host',
+        now
+      });
+      updateRoomHostStatement.run(hostParticipant.id, room.id);
+
+      return buildRoomLookupResponse({
+        ...room,
+        hostClientId: hostParticipant.id
+      });
     },
 
     getRoomByToken(token: string): RoomLookupResponse {
       return buildRoomLookupResponse(getValidatedRoom(token));
+    },
+
+    joinRoom(token: string, input: JoinRoomRequest): RoomJoinResponse {
+      const room = getValidatedRoom(token);
+      const displayName = normalizeDisplayName(input.displayName, 'Guest');
+      const now = new Date().toISOString();
+
+      if (input.participantId) {
+        const existingParticipant = requireParticipantForRoom(input.participantId, room.id);
+        refreshParticipantStatement.run(displayName, now, existingParticipant.id);
+
+        const participant = getParticipantById(existingParticipant.id) ?? {
+          ...existingParticipant,
+          displayName,
+          lastSeenAt: now,
+          socketId: null,
+          connectionState: 'disconnected'
+        };
+
+        return {
+          ...buildRoomLookupResponse(room),
+          participant
+        };
+      }
+
+      const participants = listParticipantsByRoomId(room.id);
+      const guestParticipants = participants.filter((participant) => participant.role === 'guest');
+
+      if (guestParticipants.length === 0) {
+        const participant = createParticipantRecord({
+          roomId: room.id,
+          displayName,
+          role: 'guest',
+          now
+        });
+
+        return {
+          ...buildRoomLookupResponse(room),
+          participant
+        };
+      }
+
+      if (guestParticipants.length === 1 && guestParticipants[0].connectionState === 'disconnected') {
+        const reusableParticipant = guestParticipants[0];
+        refreshParticipantStatement.run(displayName, now, reusableParticipant.id);
+
+        const participant = getParticipantById(reusableParticipant.id) ?? {
+          ...reusableParticipant,
+          displayName,
+          lastSeenAt: now,
+          socketId: null,
+          connectionState: 'disconnected'
+        };
+
+        return {
+          ...buildRoomLookupResponse(room),
+          participant
+        };
+      }
+
+      throw new HttpError(409, 'Room already has an active guest participant');
     },
 
     updateActiveSubtitle(token: string, activeSubtitleId: string | null): RoomLookupResponse {
@@ -226,12 +526,95 @@ export function createRoomService(
       });
     },
 
-    closeRoom(token: string): void {
-      const result = closeRoomStatement.run(token);
+    connectParticipant(token: string, participantId: string, socketId: string) {
+      const room = getValidatedRoom(token);
+      const participant = requireParticipantForRoom(participantId, room.id);
+      const now = new Date().toISOString();
 
-      if (result.changes === 0) {
+      connectParticipantStatement.run(now, socketId, participant.id);
+
+      return {
+        roomToken: room.token,
+        participant: getParticipantById(participant.id) ?? {
+          ...participant,
+          socketId,
+          lastSeenAt: now,
+          connectionState: 'connected'
+        },
+        response: buildRoomLookupResponse(room)
+      };
+    },
+
+    touchParticipant(token: string, participantId: string): Participant {
+      const room = getValidatedRoom(token);
+      const participant = requireParticipantForRoom(participantId, room.id);
+      const now = new Date().toISOString();
+
+      touchParticipantStatement.run(now, participant.id);
+
+      return getParticipantById(participant.id) ?? {
+        ...participant,
+        lastSeenAt: now
+      };
+    },
+
+    leaveRoom(token: string, participantId: string) {
+      const room = getValidatedRoom(token);
+      const participant = requireParticipantForRoom(participantId, room.id);
+      const now = new Date().toISOString();
+
+      disconnectParticipantStatement.run(now, participant.id);
+
+      return {
+        roomToken: room.token,
+        participant: getParticipantById(participant.id) ?? {
+          ...participant,
+          socketId: null,
+          lastSeenAt: now,
+          connectionState: 'disconnected'
+        },
+        response: buildRoomLookupResponse(room)
+      };
+    },
+
+    disconnectParticipantBySocketId(socketId: string) {
+      const row = getParticipantBySocketIdStatement.get(socketId) as ParticipantRow | undefined;
+
+      if (!row) {
+        return null;
+      }
+
+      const participant = mapParticipant(row);
+      const room = getRoomByIdRecord(participant.roomId);
+
+      if (!room) {
+        return null;
+      }
+
+      const now = new Date().toISOString();
+      disconnectParticipantStatement.run(now, participant.id);
+
+      return {
+        roomToken: room.token,
+        participant: getParticipantById(participant.id) ?? {
+          ...participant,
+          socketId: null,
+          lastSeenAt: now,
+          connectionState: 'disconnected'
+        },
+        response: buildRoomLookupResponse(room)
+      };
+    },
+
+    closeRoom(token: string): void {
+      const room = getRoomByTokenRecord(token);
+
+      if (!room) {
         throw new HttpError(404, 'Room not found');
       }
+
+      updateRoomStatusStatement.run('closed', token);
+      disconnectParticipantsByRoomIdStatement.run(new Date().toISOString(), room.id);
     }
   };
 }

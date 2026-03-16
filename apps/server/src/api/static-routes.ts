@@ -22,6 +22,12 @@ export async function registerStaticRoutes(
       '*': string;
     };
   }>('/media/:mediaId/*', async (request, reply) => {
+    const media = dependencies.mediaService.getMediaById(request.params.mediaId);
+
+    if (!media || media.status !== 'ready' || !media.hlsManifestPath) {
+      throw new HttpError(404, 'Media not found');
+    }
+
     const assetPath = request.params['*'];
     const mediaDirectory = resolve(
       dependencies.env.storage.hlsDir,

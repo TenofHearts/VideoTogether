@@ -7,8 +7,14 @@ import type { RoomService } from '../services/room-service.js';
 const createRoomBodySchema = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
   hostClientId: z.string().min(1).nullable().optional(),
+  hostDisplayName: z.string().trim().min(1).max(48).nullable().optional(),
   activeMediaId: z.string().uuid().nullable().optional(),
   activeSubtitleId: z.string().uuid().nullable().optional()
+});
+
+const joinRoomBodySchema = z.object({
+  displayName: z.string().trim().min(1).max(48),
+  participantId: z.string().uuid().nullable().optional()
 });
 
 const updateSubtitleBodySchema = z.object({
@@ -41,6 +47,22 @@ export async function registerRoomRoutes(
     };
   }>('/api/rooms/:token', async (request) => {
     return dependencies.roomService.getRoomByToken(request.params.token);
+  });
+
+  app.post<{
+    Params: {
+      token: string;
+    };
+  }>('/api/rooms/:token/join', async (request, reply) => {
+    const parseResult = joinRoomBodySchema.safeParse(request.body ?? {});
+
+    if (!parseResult.success) {
+      throw new HttpError(400, 'Invalid room join payload');
+    }
+
+    const room = dependencies.roomService.joinRoom(request.params.token, parseResult.data);
+
+    return reply.status(200).send(room);
   });
 
   app.post<{

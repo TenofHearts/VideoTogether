@@ -13,6 +13,10 @@ export type MediaStatus = 'pending' | 'processing' | 'ready' | 'error';
 
 export type SubtitleFormat = 'srt' | 'vtt' | 'ass';
 
+export type ParticipantRole = 'host' | 'guest';
+
+export type ParticipantConnectionState = 'connected' | 'disconnected';
+
 export type Room = {
   id: string;
   token: string;
@@ -55,22 +59,44 @@ export type Subtitle = {
   isDefault: boolean;
 };
 
+export type Participant = {
+  id: string;
+  roomId: string;
+  displayName: string;
+  role: ParticipantRole;
+  joinedAt: string;
+  lastSeenAt: string;
+  socketId: string | null;
+  connectionState: ParticipantConnectionState;
+};
+
 export type CreateRoomRequest = {
   expiresAt?: string | null;
   hostClientId?: string | null;
+  hostDisplayName?: string | null;
   activeMediaId?: string | null;
   activeSubtitleId?: string | null;
+};
+
+export type JoinRoomRequest = {
+  displayName: string;
+  participantId?: string | null;
 };
 
 export type RoomLookupResponse = {
   room: Room;
   media: Media | null;
   subtitles: Subtitle[];
+  participants: Participant[];
   shareUrl: string;
   socketPath: string;
 };
 
 export type CreateRoomResponse = RoomLookupResponse;
+
+export type RoomJoinResponse = RoomLookupResponse & {
+  participant: Participant;
+};
 
 export type MediaOperationResponse = {
   media: Media;

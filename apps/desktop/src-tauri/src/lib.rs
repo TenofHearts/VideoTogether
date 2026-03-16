@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::net::UdpSocket;
+use url::Url;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,17 +24,31 @@ fn detect_lan_ip() -> Option<String> {
     }
 }
 
+fn get_web_url() -> String {
+    std::env::var("WEB_URL").unwrap_or_else(|_| "http://localhost:5173".into())
+}
+
+fn get_lan_web_url(web_url: &str, lan_ip: Option<&str>) -> Option<String> {
+    let lan_ip = lan_ip?;
+    let mut parsed = Url::parse(web_url).ok()?;
+
+    if parsed.set_host(Some(lan_ip)).is_err() {
+        return None;
+    }
+
+    Some(parsed.to_string())
+}
+
 #[tauri::command]
 fn get_local_status() -> DesktopStatus {
     let lan_ip = detect_lan_ip();
+    let web_url = get_web_url();
 
     DesktopStatus {
         api_base_url: "http://localhost:3000".into(),
-        web_url: "http://localhost:5173".into(),
-        lan_api_base_url: lan_ip
-            .as_ref()
-            .map(|ip| format!("http://{}:3000", ip)),
-        lan_web_url: lan_ip.map(|ip| format!("http://{}:5173", ip)),
+        web_url: web_url.clone(),
+        lan_api_base_url: lan_ip.as_ref().map(|ip| format!("http://{}:3000", ip)),
+        lan_web_url: get_lan_web_url(&web_url, lan_ip.as_deref()),
         tauri: "ready",
     }
 }
