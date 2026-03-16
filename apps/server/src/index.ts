@@ -2,7 +2,12 @@ import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { z } from 'zod';
 
-import type { ServiceHealth } from '@videoshare/shared-types';
+type ServiceHealth = {
+  status: 'ok';
+  service: 'videoshare-server';
+  timestamp: string;
+  uptimeSeconds: number;
+};
 
 const envSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
@@ -42,7 +47,7 @@ app.setErrorHandler((error, _request, reply) => {
   app.log.error(error);
   reply.status(500).send({
     message: 'Unexpected server error',
-    detail: error.message
+    detail: error instanceof Error ? error.message : 'Unknown error'
   });
 });
 

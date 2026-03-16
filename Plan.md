@@ -549,7 +549,7 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - frontend connects to local backend health endpoint
 
 ### Progress Notes
-- status: in progress, close to complete
+- status: completed
 - completed:
   - npm workspace monorepo scaffold created
   - `apps/web`, `apps/server`, `apps/desktop`, and shared packages created
@@ -560,17 +560,16 @@ STUN_SERVERS=stun:stun.l.google.com:19302
   - storage directories and environment template added
   - desktop dev port changed from `1420` to `4200` because Windows reserved the `1362-1461` TCP range on this machine, which caused `listen EACCES` during `tauri dev`
   - missing Tauri Windows icon asset fixed by adding `apps/desktop/src-tauri/icons/icon.ico`
+  - server Docker build issue fixed by removing the shared type import from `apps/server/src/index.ts` and narrowing unknown errors safely
 - verified:
   - `docker compose -f infra/docker-compose.yml config` parses successfully
   - `npm run dev:desktop` can get past the original port and missing icon errors
-- remaining local-environment dependent checks:
-  - confirm the server starts locally after dependency install
-  - confirm the frontend reaches the backend health endpoint in a live run
-  - confirm Tauri desktop shell launches cleanly on the host machine
-  - install and verify local `ffmpeg` / `ffprobe`
-- current blockers outside repository code:
-  - if Cargo or system runtime downloads are required, they must be handled manually on the host machine
-  - some dev-run behavior may still vary based on local Windows permissions and runtime prerequisites
+  - local `ffmpeg` and `ffprobe` are installed and executable
+  - local `server` and `web` startup were confirmed on the host machine
+  - Docker image build and containerized server startup flow were confirmed on the host machine
+- acceptance completed on 2026-03-16:
+  - Phase 0 deliverables are considered done
+  - Phase 1 can start from the current repository state
 
 ---
 
