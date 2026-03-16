@@ -1,5 +1,25 @@
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
+}
+
 export function getApiBaseUrl(explicitUrl?: string): string {
   if (explicitUrl && explicitUrl.length > 0) {
+    try {
+      const parsedUrl = new URL(explicitUrl);
+
+      if (
+        typeof window !== 'undefined'
+        && window.location.protocol.startsWith('http')
+        && !isLoopbackHostname(window.location.hostname)
+        && isLoopbackHostname(parsedUrl.hostname)
+      ) {
+        parsedUrl.hostname = window.location.hostname;
+        return parsedUrl.toString();
+      }
+    } catch {
+      return explicitUrl;
+    }
+
     return explicitUrl;
   }
 
@@ -34,3 +54,4 @@ export function buildUrlFromBase(baseUrl: string, relativePath: string): string 
 export function buildRoomUrl(baseUrl: string, token: string): string {
   return buildUrlFromBase(baseUrl, `room/${token}`);
 }
+

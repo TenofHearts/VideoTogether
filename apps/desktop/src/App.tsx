@@ -17,9 +17,9 @@ type RecentMediaState =
   | { kind: 'error'; data: Media[]; message: string }
   | { kind: 'success'; data: Media[] };
 
-type TauriWindow = Window & {
-  __TAURI_INTERNALS__?: unknown;
-};
+const showDebugUrls = ['1', 'true', 'yes', 'on'].includes(
+  String(import.meta.env.VITE_DEBUG_URLS ?? '').toLowerCase()
+);
 
 const fallbackStatus: DesktopStatus = {
   apiBaseUrl: 'http://localhost:3000',
@@ -112,15 +112,6 @@ export default function App() {
     let cancelled = false;
 
     async function loadDesktopStatus() {
-      const maybeTauriWindow = window as TauriWindow;
-
-      if (!maybeTauriWindow.__TAURI_INTERNALS__) {
-        if (!cancelled) {
-          setStatus(fallbackStatus);
-        }
-        return;
-      }
-
       try {
         const { invoke } = await import('@tauri-apps/api/core');
         const nextStatus = await invoke<DesktopStatus>('get_local_status');
@@ -333,15 +324,6 @@ export default function App() {
   const lanRoomPlayerUrl = room && status?.lanWebUrl
     ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
     : null;
-  const manifestUrl =
-    media && status && media.hlsManifestPath
-      ? `${status.apiBaseUrl}/media/${media.id}/${media.hlsManifestPath}`
-      : null;
-  const lanManifestUrl =
-    media && status?.lanApiBaseUrl && media.hlsManifestPath
-      ? `${status.lanApiBaseUrl}/media/${media.id}/${media.hlsManifestPath}`
-      : null;
-
   async function selectExistingMedia(mediaId: string) {
     if (!status) {
       return;
@@ -665,25 +647,29 @@ export default function App() {
           {status && (
             <dl className="statusGrid compact">
               <div>
-                <dt>API</dt>
-                <dd>{status.apiBaseUrl}</dd>
-              </div>
-              <div>
-                <dt>Web</dt>
-                <dd>{status.webUrl}</dd>
-              </div>
-              <div>
-                <dt>LAN API</dt>
-                <dd>{status.lanApiBaseUrl ?? 'Unavailable'}</dd>
-              </div>
-              <div>
-                <dt>LAN Web</dt>
-                <dd>{status.lanWebUrl ?? 'Unavailable'}</dd>
-              </div>
-              <div>
                 <dt>Tauri</dt>
                 <dd>{status.tauri}</dd>
               </div>
+              {showDebugUrls && (
+                <>
+                  <div>
+                    <dt>API</dt>
+                    <dd>{status.apiBaseUrl}</dd>
+                  </div>
+                  <div>
+                    <dt>Web</dt>
+                    <dd>{status.webUrl}</dd>
+                  </div>
+                  <div>
+                    <dt>LAN API</dt>
+                    <dd>{status.lanApiBaseUrl ?? 'Unavailable'}</dd>
+                  </div>
+                  <div>
+                    <dt>LAN Web</dt>
+                    <dd>{status.lanWebUrl ?? 'Unavailable'}</dd>
+                  </div>
+                </>
+              )}
             </dl>
           )}
         </div>
@@ -994,48 +980,8 @@ export default function App() {
               <p className="sectionEyebrow">Share and preview</p>
               <h2>Generated URLs</h2>
               <p className="cardCopy">
-                Local URLs are for this machine. LAN URLs are for other devices on the same network. A future ngrok URL can coexist with both.
+                Local room URLs are for this machine. LAN room URLs are for other devices on the same network.
               </p>
-
-              <div className="linkGroup">
-                <span className="linkLabel">Local player URL</span>
-                <p className="linkValue">{playerUrl ?? 'Unavailable until media exists'}</p>
-                {playerUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(playerUrl)} type="button">
-                    Copy local player URL
-                  </button>
-                )}
-              </div>
-
-              <div className="linkGroup">
-                <span className="linkLabel">LAN player URL</span>
-                <p className="linkValue">{lanPlayerUrl ?? 'Available after LAN detection succeeds'}</p>
-                {lanPlayerUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(lanPlayerUrl)} type="button">
-                    Copy LAN player URL
-                  </button>
-                )}
-              </div>
-
-              <div className="linkGroup">
-                <span className="linkLabel">Local manifest URL</span>
-                <p className="linkValue">{manifestUrl ?? 'Will appear after HLS is ready'}</p>
-                {manifestUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(manifestUrl)} type="button">
-                    Copy local manifest URL
-                  </button>
-                )}
-              </div>
-
-              <div className="linkGroup">
-                <span className="linkLabel">LAN manifest URL</span>
-                <p className="linkValue">{lanManifestUrl ?? 'Available after LAN detection succeeds'}</p>
-                {lanManifestUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(lanManifestUrl)} type="button">
-                    Copy LAN manifest URL
-                  </button>
-                )}
-              </div>
 
               <div className="linkGroup">
                 <span className="linkLabel">Configured secret room URL</span>
@@ -1066,6 +1012,30 @@ export default function App() {
                   </button>
                 )}
               </div>
+
+              {showDebugUrls && (
+                <>
+                  <div className="linkGroup">
+                    <span className="linkLabel">Local player URL</span>
+                    <p className="linkValue">{playerUrl ?? 'Unavailable until media exists'}</p>
+                    {playerUrl && (
+                      <button className="ghostButton" onClick={() => void copyText(playerUrl)} type="button">
+                        Copy local player URL
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="linkGroup">
+                    <span className="linkLabel">LAN player URL</span>
+                    <p className="linkValue">{lanPlayerUrl ?? 'Available after LAN detection succeeds'}</p>
+                    {lanPlayerUrl && (
+                      <button className="ghostButton" onClick={() => void copyText(lanPlayerUrl)} type="button">
+                        Copy LAN player URL
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </article>
           </section>
         )}
@@ -1092,20 +1062,5 @@ export default function App() {
     </main>
   );
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
