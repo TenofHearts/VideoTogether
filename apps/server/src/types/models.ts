@@ -69,8 +69,6 @@ export type RoomLookupResponse = {
   socketPath: string;
 };
 
-export type CreateRoomResponse = RoomLookupResponse;
-
 export type SystemStatus = {
   apiBaseUrl: string;
   webUrl: string;
@@ -92,5 +90,3 @@ export type SystemStatus = {
     detail: string;
   };
 };
-
-export type DesktopStatus = SystemStatus;

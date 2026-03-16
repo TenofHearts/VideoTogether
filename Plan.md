@@ -590,6 +590,30 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - socket connection established
 - DB persists entities locally
 
+### Progress Notes
+- status: completed
+- completed:
+  - modular Fastify server bootstrap added with `api`, `config`, `db`, `lib`, `services`, `sockets`, and `types` folders
+  - SQLite persistence added with automatic schema initialization for `rooms`, `media`, and `subtitles`
+  - room creation, lookup, and close endpoints implemented
+  - system status endpoint expanded to report database, storage, and realtime status
+  - static serving foundations added for HLS assets and subtitle files with path-safety checks
+  - Socket.IO server bootstrap added and verified with a real client handshake
+  - frontend landing page updated to show health, system status, and realtime connection state
+  - shared room/media/subtitle DTOs and Zod schemas added to shared packages
+- verified:
+  - `npm run build --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/web` passes
+  - `npm run build --workspace @videoshare/web` passes
+  - local Fastify injection verifies room creation, lookup, close, and SQLite file persistence in `storage/db/app.db`
+  - real Socket.IO client connection receives the `system:hello` handshake event
+  - `docker compose -f infra/docker-compose.yml build app-server` completes successfully
+  - `docker compose -f infra/docker-compose.yml up -d --build app-server` starts successfully and `/health` returns `200`
+- acceptance completed on 2026-03-16:
+  - Phase 1 deliverables are considered done
+  - Phase 2 can start from the current repository state
+
 ---
 
 ## Phase 2 — Media Import and HLS Processing
