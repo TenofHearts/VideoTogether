@@ -686,6 +686,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (route.kind === 'room') {
+      return;
+    }
+
     let cancelled = false;
 
     async function loadRecentMedia() {
@@ -718,7 +722,7 @@ export default function App() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, []);
+  }, [route.kind]);
 
   useEffect(() => {
     if (!roomToken) {
@@ -1033,7 +1037,6 @@ export default function App() {
       );
     });
 
-
     socket.on('room:participant-joined', (participant: Participant) => {
       setNotice(`${participant.displayName} joined the room.`);
     });
@@ -1123,7 +1126,6 @@ export default function App() {
     joinState.kind === 'success' ? joinState.participant.id : 'idle',
     roomToken ?? 'home'
   ]);
-
 
   const playbackMedia =
     route.kind === 'room'
@@ -1390,7 +1392,9 @@ export default function App() {
           if (data.fatal) {
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
               setPlayerState('buffering');
-              setPlayerMessage('Stream interrupted. Retrying the next segment...');
+              setPlayerMessage(
+                'Stream interrupted. Retrying the next segment...'
+              );
               hls.startLoad();
               return;
             }
@@ -1679,9 +1683,8 @@ export default function App() {
             private room link.
           </h1>
           <p className="mt-4 max-w-3xl text-lg text-slate-600">
-            Open a room from the desktop host, watch through the browser
-            player, keep subtitle changes shared, and recover smoothly after
-            reconnects.
+            Open a room from the desktop host, watch through the browser player,
+            keep subtitle changes shared, and recover smoothly after reconnects.
           </p>
         </section>
 
@@ -1805,10 +1808,8 @@ export default function App() {
                         )}
                       </p>
                       <p className="mt-1">
-                        Expires:{' '}
-                        {currentRoom.room.expiresAt
-                          ? formatTimestamp(currentRoom.room.expiresAt)
-                          : 'No expiration set'}
+                        Scope: current room only, until the host replaces it or
+                        stops the server.
                       </p>
                     </div>
                     <div className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-700">
@@ -2052,15 +2053,18 @@ export default function App() {
                     </div>
                     <div className="rounded-2xl bg-white/10 p-4 text-sm">
                       <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
-                        Cleanup policy
+                        Room lifecycle
                       </p>
                       <p className="mt-2">
-                        Interval: every {system.data.cleanup.intervalMinutes}{' '}
-                        min
+                        Active room policy: one room stays active at a time.
                       </p>
                       <p className="mt-1">
-                        Idle room TTL: {system.data.cleanup.idleRoomTtlMinutes}{' '}
-                        min
+                        Replacement policy: creating a new room closes the old
+                        one.
+                      </p>
+                      <p className="mt-1">
+                        Shutdown policy: room state is cleared when the server
+                        stops.
                       </p>
                       <p className="mt-1">
                         HLS retention: {system.data.cleanup.hlsRetentionHours} h
@@ -2078,11 +2082,7 @@ export default function App() {
                           system.data.cleanup.lastRun.finishedAt
                         )}
                       </p>
-                      <p className="mt-1">
-                        Rooms closed:{' '}
-                        {system.data.cleanup.lastRun.expiredRoomsClosed +
-                          system.data.cleanup.lastRun.idleRoomsClosed}
-                      </p>
+
                       <p className="mt-1">
                         HLS directories removed:{' '}
                         {system.data.cleanup.lastRun.hlsDirectoriesRemoved}
@@ -2153,60 +2153,60 @@ export default function App() {
               </section>
             )}
 
-            <section className="rounded-[2rem] border border-slate-200 bg-white/85 p-6 shadow-panel">
-              <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                Recent imports
-              </p>
-              <h2 className="mt-2 font-serif text-3xl">Media queue</h2>
-              {recentMedia.kind === 'loading' && (
-                <div className="mt-4 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">
-                  Loading media queue...
-                </div>
-              )}
-              {recentMedia.kind === 'error' && (
-                <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  {recentMedia.message}
-                </div>
-              )}
-              {recentMedia.kind === 'success' &&
-                recentMedia.data.length === 0 && (
+            {route.kind === 'home' && (
+              <section className="rounded-[2rem] border border-slate-200 bg-white/85 p-6 shadow-panel">
+                <p className="text-sm uppercase tracking-[0.25em] text-coral">
+                  Recent imports
+                </p>
+                <h2 className="mt-2 font-serif text-3xl">Media queue</h2>
+                {recentMedia.kind === 'loading' && (
                   <div className="mt-4 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">
-                    No media has been imported yet.
+                    Loading media queue...
                   </div>
                 )}
-              {recentMedia.kind === 'success' &&
-                recentMedia.data.length > 0 && (
-                  <div className="mt-4 flex flex-col gap-3">
-                    {recentMedia.data.map((media) => (
-                      <button
-                        className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-900 hover:bg-white"
-                        key={media.id}
-                        onClick={() => navigateHome(media.id)}
-                        type="button"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div>
-                            <p className="font-semibold text-slate-900">
-                              {media.originalFileName}
-                            </p>
-                            <p className="mt-1 text-sm text-slate-600">
-                              Imported {formatTimestamp(media.createdAt)}
-                            </p>
+                {recentMedia.kind === 'error' && (
+                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                    {recentMedia.message}
+                  </div>
+                )}
+                {recentMedia.kind === 'success' &&
+                  recentMedia.data.length === 0 && (
+                    <div className="mt-4 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">
+                      No media has been imported yet.
+                    </div>
+                  )}
+                {recentMedia.kind === 'success' &&
+                  recentMedia.data.length > 0 && (
+                    <div className="mt-4 flex flex-col gap-3">
+                      {recentMedia.data.map((media) => (
+                        <button
+                          className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-900 hover:bg-white"
+                          key={media.id}
+                          onClick={() => navigateHome(media.id)}
+                          type="button"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="font-semibold text-slate-900">
+                                {media.originalFileName}
+                              </p>
+                              <p className="mt-1 text-sm text-slate-600">
+                                Imported {formatTimestamp(media.createdAt)}
+                              </p>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700">
+                              {getStatusLabel(media.status)}
+                            </span>
                           </div>
-                          <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700">
-                            {getStatusLabel(media.status)}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-            </section>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+              </section>
+            )}
           </div>
         </section>
       </div>
     </main>
   );
 }
-
-

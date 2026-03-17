@@ -99,7 +99,10 @@ function createRoomShareUrl(publicBaseUrl: string, token: string): string {
   return new URL(`/room/${token}`, publicBaseUrl).toString();
 }
 
-function normalizeDisplayName(value: string | null | undefined, fallback: string): string {
+function normalizeDisplayName(
+  value: string | null | undefined,
+  fallback: string
+): string {
   const trimmed = value?.trim();
 
   if (!trimmed) {
@@ -173,6 +176,24 @@ export function createRoomService(
     WHERE id = ?
   `);
 
+  const listActiveRoomsStatement = database.connection.prepare(`
+    SELECT
+      id,
+      token,
+      created_at,
+      expires_at,
+      status,
+      host_client_id,
+      current_playback_time,
+      playback_state,
+      playback_rate,
+      last_state_updated_at,
+      active_media_id,
+      active_subtitle_id
+    FROM rooms
+    WHERE status = 'active'
+    ORDER BY created_at DESC
+  `);
   const updateRoomStatusStatement = database.connection.prepare(`
     UPDATE rooms
     SET status = ?
@@ -301,7 +322,9 @@ export function createRoomService(
   `);
 
   function listParticipantsByRoomId(roomId: string): Participant[] {
-    const rows = listParticipantsByRoomIdStatement.all(roomId) as ParticipantRow[];
+    const rows = listParticipantsByRoomIdStatement.all(
+      roomId
+    ) as ParticipantRow[];
     return rows.map((row) => mapParticipant(row));
   }
 
@@ -315,11 +338,34 @@ export function createRoomService(
     return row ? mapRoom(row) : null;
   }
 
+  function listActiveRooms(): Room[] {
+    const rows = listActiveRoomsStatement.all() as RoomRow[];
+    return rows.map((row) => mapRoom(row));
+  }
   function getParticipantById(participantId: string): Participant | null {
-    const row = getParticipantByIdStatement.get(participantId) as ParticipantRow | undefined;
+    const row = getParticipantByIdStatement.get(participantId) as
+      | ParticipantRow
+      | undefined;
     return row ? mapParticipant(row) : null;
   }
 
+  function closeRooms(rooms: Room[]): number {
+    if (rooms.length === 0) {
+      return 0;
+    }
+
+    const now = new Date().toISOString();
+
+    for (const room of rooms) {
+      if (room.status !== 'closed') {
+        updateRoomStatusStatement.run('closed', room.token);
+      }
+
+      disconnectParticipantsByRoomIdStatement.run(now, room.id);
+    }
+
+    return rooms.length;
+  }
   function getRoomDurationSeconds(room: Room): number | null {
     if (!room.activeMediaId) {
       return null;
@@ -334,7 +380,10 @@ export function createRoomService(
     return media.durationMs / 1000;
   }
 
-  function clampPlaybackTime(value: number, durationSeconds: number | null): number {
+  function clampPlaybackTime(
+    value: number,
+    durationSeconds: number | null
+  ): number {
     const roundedTime = roundPlaybackTime(value);
 
     if (durationSeconds === null) {
@@ -367,7 +416,10 @@ export function createRoomService(
     currentPlaybackTime: number,
     durationSeconds: number | null
   ): Room['playbackState'] {
-    if (durationSeconds !== null && currentPlaybackTime >= roundPlaybackTime(durationSeconds)) {
+    if (
+      durationSeconds !== null &&
+      currentPlaybackTime >= roundPlaybackTime(durationSeconds)
+    ) {
       return 'paused';
     }
 
@@ -384,7 +436,10 @@ export function createRoomService(
     }
   ): Room {
     const durationSeconds = getRoomDurationSeconds(room);
-    const currentPlaybackTime = clampPlaybackTime(input.currentPlaybackTime, durationSeconds);
+    const currentPlaybackTime = clampPlaybackTime(
+      input.currentPlaybackTime,
+      durationSeconds
+    );
     const playbackState = normalizePlaybackState(
       input.playbackState,
       currentPlaybackTime,
@@ -421,7 +476,10 @@ export function createRoomService(
     }
 
     if (media.status !== 'ready' || !media.hlsManifestPath) {
-      throw new HttpError(409, 'Room media is not ready for synchronized playback');
+      throw new HttpError(
+        409,
+        'Room media is not ready for synchronized playback'
+      );
     }
 
     return media;
@@ -450,14 +508,6 @@ export function createRoomService(
 
     if (!room) {
       throw new HttpError(404, 'Room not found');
-    }
-
-    if (room.expiresAt && new Date(room.expiresAt).getTime() <= Date.now()) {
-      if (room.status !== 'expired') {
-        updateRoomStatusStatement.run('expired', token);
-      }
-
-      throw new HttpError(410, 'Room expired');
     }
 
     if (room.status === 'closed') {
@@ -502,11 +552,17 @@ export function createRoomService(
     return participant;
   }
 
-  function requireParticipantForRoom(participantId: string, roomId: string): Participant {
+  function requireParticipantForRoom(
+    participantId: string,
+    roomId: string
+  ): Participant {
     const participant = getParticipantById(participantId);
 
     if (!participant || participant.roomId !== roomId) {
-      throw new HttpError(403, 'Participant session is not valid for this room');
+      throw new HttpError(
+        403,
+        'Participant session is not valid for this room'
+      );
     }
 
     return participant;
@@ -524,9 +580,10 @@ export function createRoomService(
     requireReadyMediaForPlayback(room);
 
     const now = new Date().toISOString();
-    const playbackRate = input.playbackRate && input.playbackRate > 0
-      ? input.playbackRate
-      : room.playbackRate;
+    const playbackRate =
+      input.playbackRate && input.playbackRate > 0
+        ? input.playbackRate
+        : room.playbackRate;
     const updatedRoom = persistPlaybackState(room, {
       currentPlaybackTime: input.currentTime,
       playbackState:
@@ -551,7 +608,10 @@ export function createRoomService(
     createRoom(input: CreateRoomRequest): RoomLookupResponse {
       const now = new Date().toISOString();
 
-      if (input.activeMediaId && !mediaService.getMediaById(input.activeMediaId)) {
+      if (
+        input.activeMediaId &&
+        !mediaService.getMediaById(input.activeMediaId)
+      ) {
         throw new HttpError(404, 'Active media not found');
       }
 
@@ -563,15 +623,19 @@ export function createRoomService(
         }
 
         if (input.activeMediaId && subtitle.mediaId !== input.activeMediaId) {
-          throw new HttpError(400, 'Active subtitle does not belong to the selected media');
+          throw new HttpError(
+            400,
+            'Active subtitle does not belong to the selected media'
+          );
         }
       }
 
+      closeRooms(listActiveRooms());
       const room: Room = {
         id: randomUUID(),
         token: randomBytes(env.roomTokenBytes).toString('base64url'),
         createdAt: now,
-        expiresAt: input.expiresAt ?? null,
+        expiresAt: null,
         status: 'active',
         hostClientId: null,
         currentPlaybackTime: 0,
@@ -621,8 +685,15 @@ export function createRoomService(
       const now = new Date().toISOString();
 
       if (input.participantId) {
-        const existingParticipant = requireParticipantForRoom(input.participantId, room.id);
-        refreshParticipantStatement.run(displayName, now, existingParticipant.id);
+        const existingParticipant = requireParticipantForRoom(
+          input.participantId,
+          room.id
+        );
+        refreshParticipantStatement.run(
+          displayName,
+          now,
+          existingParticipant.id
+        );
 
         const participant = getParticipantById(existingParticipant.id) ?? {
           ...existingParticipant,
@@ -639,7 +710,9 @@ export function createRoomService(
       }
 
       const participants = listParticipantsByRoomId(room.id);
-      const guestParticipants = participants.filter((participant) => participant.role === 'guest');
+      const guestParticipants = participants.filter(
+        (participant) => participant.role === 'guest'
+      );
 
       if (guestParticipants.length === 0) {
         const participant = createParticipantRecord({
@@ -655,9 +728,16 @@ export function createRoomService(
         };
       }
 
-      if (guestParticipants.length === 1 && guestParticipants[0].connectionState === 'disconnected') {
+      if (
+        guestParticipants.length === 1 &&
+        guestParticipants[0].connectionState === 'disconnected'
+      ) {
         const reusableParticipant = guestParticipants[0];
-        refreshParticipantStatement.run(displayName, now, reusableParticipant.id);
+        refreshParticipantStatement.run(
+          displayName,
+          now,
+          reusableParticipant.id
+        );
 
         const participant = getParticipantById(reusableParticipant.id) ?? {
           ...reusableParticipant,
@@ -676,7 +756,10 @@ export function createRoomService(
       throw new HttpError(409, 'Room already has an active guest participant');
     },
 
-    updateActiveSubtitle(token: string, activeSubtitleId: string | null): RoomLookupResponse {
+    updateActiveSubtitle(
+      token: string,
+      activeSubtitleId: string | null
+    ): RoomLookupResponse {
       const room = getValidatedRoom(token);
 
       if (!room.activeMediaId) {
@@ -691,7 +774,10 @@ export function createRoomService(
         }
 
         if (subtitle.mediaId !== room.activeMediaId) {
-          throw new HttpError(400, 'Subtitle does not belong to the room media');
+          throw new HttpError(
+            400,
+            'Subtitle does not belong to the room media'
+          );
         }
       }
 
@@ -729,21 +815,35 @@ export function createRoomService(
 
       touchParticipantStatement.run(now, participant.id);
 
-      return getParticipantById(participant.id) ?? {
-        ...participant,
-        lastSeenAt: now
-      };
+      return (
+        getParticipantById(participant.id) ?? {
+          ...participant,
+          lastSeenAt: now
+        }
+      );
     },
 
-    play(token: string, participantId: string, input: PlaybackCommandPayload): PlaybackMutationResult {
+    play(
+      token: string,
+      participantId: string,
+      input: PlaybackCommandPayload
+    ): PlaybackMutationResult {
       return updatePlayback(token, participantId, input, 'play');
     },
 
-    pause(token: string, participantId: string, input: PlaybackCommandPayload): PlaybackMutationResult {
+    pause(
+      token: string,
+      participantId: string,
+      input: PlaybackCommandPayload
+    ): PlaybackMutationResult {
       return updatePlayback(token, participantId, input, 'pause');
     },
 
-    seek(token: string, participantId: string, input: PlaybackCommandPayload): PlaybackMutationResult {
+    seek(
+      token: string,
+      participantId: string,
+      input: PlaybackCommandPayload
+    ): PlaybackMutationResult {
       return updatePlayback(token, participantId, input, 'seek');
     },
 
@@ -758,19 +858,26 @@ export function createRoomService(
       requireReadyMediaForPlayback(room);
 
       const durationSeconds = getRoomDurationSeconds(room);
-      const reportedTime = clampPlaybackTime(input.currentTime, durationSeconds);
+      const reportedTime = clampPlaybackTime(
+        input.currentTime,
+        durationSeconds
+      );
       const canonicalTime = getCanonicalPlaybackTime(room);
       const driftMs = Math.round((canonicalTime - reportedTime) * 1000);
       const stateMismatch = input.playbackState !== room.playbackState;
-      const rateMismatch = typeof input.playbackRate === 'number'
-        && Math.abs(input.playbackRate - room.playbackRate) > 0.05;
+      const rateMismatch =
+        typeof input.playbackRate === 'number' &&
+        Math.abs(input.playbackRate - room.playbackRate) > 0.05;
       const absoluteDriftMs = Math.abs(driftMs);
 
       let mode: PlaybackResyncMode | null = null;
 
       if (stateMismatch || rateMismatch) {
         mode = 'hard';
-      } else if (room.playbackState === 'paused' && absoluteDriftMs >= PAUSED_RESYNC_THRESHOLD_MS) {
+      } else if (
+        room.playbackState === 'paused' &&
+        absoluteDriftMs >= PAUSED_RESYNC_THRESHOLD_MS
+      ) {
         mode = 'hard';
       } else if (absoluteDriftMs >= HARD_RESYNC_THRESHOLD_MS) {
         mode = 'hard';
@@ -808,7 +915,9 @@ export function createRoomService(
     },
 
     disconnectParticipantBySocketId(socketId: string) {
-      const row = getParticipantBySocketIdStatement.get(socketId) as ParticipantRow | undefined;
+      const row = getParticipantBySocketIdStatement.get(socketId) as
+        | ParticipantRow
+        | undefined;
 
       if (!row) {
         return null;
@@ -843,8 +952,10 @@ export function createRoomService(
         throw new HttpError(404, 'Room not found');
       }
 
-      updateRoomStatusStatement.run('closed', token);
-      disconnectParticipantsByRoomIdStatement.run(new Date().toISOString(), room.id);
+      closeRooms([room]);
+    },
+    closeAllRooms(): number {
+      return closeRooms(listActiveRooms());
     }
   };
 }

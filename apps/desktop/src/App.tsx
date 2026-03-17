@@ -285,7 +285,6 @@ export default function App() {
   const [deleteConfirmArmed, setDeleteConfirmArmed] = useState(false);
   const [processingQueued, setProcessingQueued] = useState(false);
   const [hostDisplayName, setHostDisplayName] = useState('Host');
-  const [roomExpiryHours, setRoomExpiryHours] = useState('24');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -913,12 +912,6 @@ export default function App() {
       return;
     }
 
-    if (hasActiveRoom) {
-      setError('Close the current room before creating a new one.');
-      setMessage(null);
-      return;
-    }
-
     setRoomState('working');
     setCloseRoomState('idle');
     setError(null);
@@ -937,12 +930,7 @@ export default function App() {
         },
         body: JSON.stringify({
           hostDisplayName: hostDisplayName.trim() || 'Host',
-          expiresAt:
-            roomExpiryHours === 'never'
-              ? null
-              : new Date(
-                  Date.now() + Number(roomExpiryHours) * 60 * 60 * 1000
-                ).toISOString(),
+
           activeMediaId: media.id,
           activeSubtitleId: defaultSubtitle?.id ?? null
         })
@@ -958,6 +946,7 @@ export default function App() {
       setRoom(payload);
       setRoomState('success');
       setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
+      await refreshDiagnostics();
       setMessage(
         'Room created. Copy the guest or host room URL from the share panel.'
       );
@@ -1034,6 +1023,7 @@ export default function App() {
       setRoom(null);
       setCloseRoomState('success');
       setRoomSubtitleState('idle');
+      await refreshDiagnostics();
       setMessage('Room closed. You can now switch media or open a new room.');
     } catch (reason) {
       setCloseRoomState('error');
@@ -1098,16 +1088,10 @@ export default function App() {
       return;
     }
 
-    if (hasActiveRoom && room?.room.activeMediaId === media.id) {
-      setError('Close the active room before deleting its movie.');
-      setMessage(null);
-      return;
-    }
-
     if (!deleteConfirmArmed) {
       setDeleteConfirmArmed(true);
       setMessage(
-        `Click delete again to remove ${media.originalFileName} and all generated playback files.`
+        `Click delete again to remove ${media.originalFileName}, all generated playback files, and any active room.`
       );
       return;
     }
@@ -1115,7 +1099,9 @@ export default function App() {
     setDeleteState('working');
     setDeleteConfirmArmed(false);
     setError(null);
-    setMessage('Deleting media, subtitles, and generated playback files...');
+    setMessage(
+      'Deleting media, subtitles, playback files, and active rooms...'
+    );
 
     try {
       const response = await fetch(
@@ -1143,7 +1129,7 @@ export default function App() {
       setCloseRoomState('idle');
       setDeleteState('success');
       setMessage('Media deleted successfully.');
-      await refreshRecentMedia();
+      await Promise.all([refreshRecentMedia(), refreshDiagnostics()]);
     } catch (reason) {
       setDeleteState('error');
       setError(reason instanceof Error ? reason.message : 'Delete failed');
@@ -1590,8 +1576,9 @@ export default function App() {
               {media ? (
                 <>
                   <p className="sectionCopy">
-                    Room creation stays inside the desktop dashboard. The
-                    selected subtitle becomes the initial room subtitle.
+                    Room creation stays inside the desktop dashboard. Each new
+                    room replaces the previous one, and the selected subtitle
+                    becomes the initial room subtitle.
                   </p>
 
                   <div className="fieldGrid">
@@ -1606,22 +1593,6 @@ export default function App() {
                         placeholder="Host display name"
                         value={hostDisplayName}
                       />
-                    </label>
-
-                    <label className="field">
-                      <span className="fieldLabel">Room expiry</span>
-                      <select
-                        className="selectInput"
-                        onChange={(event) =>
-                          setRoomExpiryHours(event.target.value)
-                        }
-                        value={roomExpiryHours}
-                      >
-                        <option value="6">Expires in 6 hours</option>
-                        <option value="24">Expires in 24 hours</option>
-                        <option value="72">Expires in 72 hours</option>
-                        <option value="never">No expiration</option>
-                      </select>
                     </label>
 
                     <label className="field fieldSpan">
@@ -1650,9 +1621,7 @@ export default function App() {
                     <button
                       className="primaryButton"
                       disabled={
-                        media.status !== 'ready' ||
-                        roomState === 'working' ||
-                        hasActiveRoom
+                        media.status !== 'ready' || roomState === 'working'
                       }
                       onClick={() => {
                         void createRoom();
@@ -1721,12 +1690,8 @@ export default function App() {
                       <strong>{activeRoomSubtitle?.label ?? 'None'}</strong>
                     </div>
                     <div className="metricCard">
-                      <span className="metricLabel">Expires</span>
-                      <strong>
-                        {room.room.expiresAt
-                          ? formatDateTime(room.room.expiresAt)
-                          : 'No expiration'}
-                      </strong>
+                      <span className="metricLabel">Scope</span>
+                      <strong>Until replaced or server shutdown</strong>
                     </div>
                   </div>
 
@@ -1826,7 +1791,9 @@ export default function App() {
                       <p className="shareValue">{secondaryHostRoomPlayerUrl}</p>
                       <button
                         className="ghostButton"
-                        onClick={() => void copyText(secondaryHostRoomPlayerUrl)}
+                        onClick={() =>
+                          void copyText(secondaryHostRoomPlayerUrl)
+                        }
                         type="button"
                       >
                         {secondaryHostRoomCopyLabel}
@@ -1958,7 +1925,7 @@ export default function App() {
               <div className="sectionHeader">
                 <div>
                   <p className="sectionEyebrow">Diagnostics</p>
-                  <h2>Server health and cleanup policy</h2>
+                  <h2>Server health and room lifecycle</h2>
                 </div>
                 <button
                   className="ghostButton"
@@ -1995,14 +1962,18 @@ export default function App() {
                   </div>
 
                   <div className="infoCard">
-                    <p className="infoTitle">Cleanup policy</p>
+                    <p className="infoTitle">Room lifecycle</p>
                     <p className="infoMeta">
-                      Interval: every{' '}
-                      {systemStatus.data.cleanup.intervalMinutes} minutes
+                      Active room policy: only one room can stay active at a
+                      time.
                     </p>
                     <p className="infoMeta">
-                      Idle room TTL:{' '}
-                      {systemStatus.data.cleanup.idleRoomTtlMinutes} minutes
+                      Replacement policy: creating a new room closes the
+                      previous one.
+                    </p>
+                    <p className="infoMeta">
+                      Shutdown policy: room state is cleared when the server
+                      stops.
                     </p>
                     <p className="infoMeta">
                       HLS retention:{' '}
@@ -2054,9 +2025,3 @@ export default function App() {
     </main>
   );
 }
-
-
-
-
-
-

@@ -30,8 +30,11 @@ export async function buildApp() {
   const mediaService = createMediaService(database, env);
   const roomService = createRoomService(database, mediaService, env);
   const cleanupService = createCleanupService(database, env, {
-    getActiveProcessingJobCount: () => mediaService.getActiveProcessingJobCount()
+    getActiveProcessingJobCount: () =>
+      mediaService.getActiveProcessingJobCount()
   });
+
+  roomService.closeAllRooms();
 
   const app = Fastify({
     logger: true
@@ -68,21 +71,25 @@ export async function buildApp() {
     roomService
   });
   await registerMediaRoutes(app, {
-    mediaService
+    mediaService,
+    roomService
   });
   await registerStaticRoutes(app, {
     env,
     mediaService
   });
 
-  const cleanupTimer = setInterval(() => {
-    try {
-      const summary = cleanupService.runNow();
-      app.log.info({ summary }, 'Completed maintenance cleanup pass');
-    } catch (error) {
-      app.log.error(error, 'Maintenance cleanup pass failed');
-    }
-  }, env.cleanup.intervalMinutes * 60 * 1000);
+  const cleanupTimer = setInterval(
+    () => {
+      try {
+        const summary = cleanupService.runNow();
+        app.log.info({ summary }, 'Completed maintenance cleanup pass');
+      } catch (error) {
+        app.log.error(error, 'Maintenance cleanup pass failed');
+      }
+    },
+    env.cleanup.intervalMinutes * 60 * 1000
+  );
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof HttpError) {
@@ -109,6 +116,7 @@ export async function buildApp() {
 
   app.addHook('onClose', async () => {
     clearInterval(cleanupTimer);
+    roomService.closeAllRooms();
     database.connection.close();
   });
 

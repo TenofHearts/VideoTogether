@@ -1,41 +1,42 @@
 {
-  "name": "videoshare",
-  "private": true,
-  "version": "1.1.1",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
-  "scripts": {
-    "dev": "npm run dev --workspace @videoshare/web",
-    "dev:web": "npm run dev --workspace @videoshare/web",
-    "dev:server": "npm run dev --workspace @videoshare/server",
-    "dev:desktop": "npm run tauri:dev --workspace @videoshare/desktop",
-    "build:host": "npm run build --workspace @videoshare/web && npm run build --workspace @videoshare/server",
-    "host:start": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-host.ps1",
-    "host:stop": "powershell -ExecutionPolicy Bypass -File infra/scripts/stop-host.ps1",
-    "host:ngrok": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-ngrok.ps1",
-    "desktop:package": "powershell -ExecutionPolicy Bypass -File infra/scripts/package-desktop.ps1",
-    "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "format": "prettier --write .",
-    "docker:up": "docker compose -f infra/docker-compose.yml up --build",
-    "docker:down": "docker compose -f infra/docker-compose.yml down"
-  },
-  "engines": {
-    "node": ">=22.0.0",
-    "npm": ">=11.0.0"
-  },
-  "devDependencies": {
-    "@eslint/js": "^9.24.0",
-    "@types/node": "^24.0.0",
-    "@typescript-eslint/eslint-plugin": "^8.29.0",
-    "@typescript-eslint/parser": "^8.29.0",
-    "eslint": "^9.24.0",
-    "eslint-config-prettier": "^10.1.1",
-    "globals": "^16.0.0",
-    "prettier": "^3.5.3",
-    "typescript": "^5.8.3"
-  }
+    "name": "videoshare",
+    "private": true,
+    "version": "1.1.1",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ],
+    "scripts": {
+        "dev": "npm run dev --workspace @videoshare/web",
+        "dev:web": "npm run dev --workspace @videoshare/web",
+        "dev:server": "npm run dev --workspace @videoshare/server",
+        "dev:desktop": "npm run tauri:dev --workspace @videoshare/desktop",
+        "dev:desktop:debug": "npm run tauri:dev:debug --workspace @videoshare/desktop",
+        "clean:desktop": "npm run tauri:clean --workspace @videoshare/desktop",
+        "build:host": "npm run build --workspace @videoshare/web && npm run build --workspace @videoshare/server",
+        "host:start": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-host.ps1",
+        "host:stop": "powershell -ExecutionPolicy Bypass -File infra/scripts/stop-host.ps1",
+        "host:ngrok": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-ngrok.ps1",
+        "build": "npm run build --workspaces --if-present",
+        "lint": "npm run lint --workspaces --if-present",
+        "typecheck": "npm run typecheck --workspaces --if-present",
+        "format": "prettier --write .",
+        "docker:up": "docker compose -f infra/docker-compose.yml up --build",
+        "docker:down": "docker compose -f infra/docker-compose.yml down"
+    },
+    "engines": {
+        "node": ">=22.0.0",
+        "npm": ">=11.0.0"
+    },
+    "devDependencies": {
+        "@eslint/js": "^9.24.0",
+        "@types/node": "^24.0.0",
+        "@typescript-eslint/eslint-plugin": "^8.29.0",
+        "@typescript-eslint/parser": "^8.29.0",
+        "eslint": "^9.24.0",
+        "eslint-config-prettier": "^10.1.1",
+        "globals": "^16.0.0",
+        "prettier": "^3.5.3",
+        "typescript": "^5.8.3"
+    }
 }

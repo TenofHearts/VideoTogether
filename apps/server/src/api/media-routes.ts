@@ -4,9 +4,11 @@ import type { FastifyInstance } from 'fastify';
 
 import { HttpError } from '../lib/errors.js';
 import type { MediaService } from '../services/media-service.js';
+import type { RoomService } from '../services/room-service.js';
 
 type MediaRouteDependencies = {
   mediaService: MediaService;
+  roomService: RoomService;
 };
 
 function decodeUploadFileName(rawFileName: string): string {
@@ -117,7 +119,9 @@ export async function registerMediaRoutes(
       id: string;
     };
   }>('/api/media/:id/process', async (request, reply) => {
-    const result = dependencies.mediaService.requestProcessing(request.params.id);
+    const result = dependencies.mediaService.requestProcessing(
+      request.params.id
+    );
 
     return reply.status(202).send(result);
   });
@@ -127,6 +131,8 @@ export async function registerMediaRoutes(
       id: string;
     };
   }>('/api/media/:id', async (request, reply) => {
+    dependencies.mediaService.ensureMediaCanBeDeleted(request.params.id);
+    dependencies.roomService.closeAllRooms();
     dependencies.mediaService.deleteMedia(request.params.id);
 
     return reply.status(204).send();
@@ -151,5 +157,3 @@ export async function registerMediaRoutes(
     };
   });
 }
-
-

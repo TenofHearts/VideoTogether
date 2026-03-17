@@ -6,7 +6,6 @@ import type { DatabaseContext } from '../db/database.js';
 import type {
   CleanupRunSummary,
   CleanupStatus,
-  RoomStatus,
   SystemDiagnostics
 } from '../types/models.js';
 
@@ -21,16 +20,6 @@ type CleanupMediaRow = {
   hls_manifest_path: string | null;
 };
 
-type CleanupRoomRow = {
-  id: string;
-  expires_at: string | null;
-};
-
-type CleanupParticipantRow = {
-  connection_state: 'connected' | 'disconnected';
-  last_seen_at: string;
-};
-
 type CleanupDependencies = {
   getActiveProcessingJobCount: () => number;
 };
@@ -42,39 +31,11 @@ export function createCleanupService(
   env: AppEnv,
   dependencies: CleanupDependencies
 ) {
-  const listActiveRoomsStatement = database.connection.prepare(`
-    SELECT id, expires_at
-    FROM rooms
-    WHERE status = 'active'
-  `);
-
-  const listParticipantsByRoomIdStatement = database.connection.prepare(`
-    SELECT connection_state, last_seen_at
-    FROM participants
-    WHERE room_id = ?
-  `);
-
-  const updateRoomStatusStatement = database.connection.prepare(`
-    UPDATE rooms
-    SET status = ?
-    WHERE id = ?
-  `);
-
-  const disconnectParticipantsByRoomIdStatement = database.connection.prepare(`
-    UPDATE participants
-    SET
-      last_seen_at = ?,
-      socket_id = NULL,
-      connection_state = 'disconnected'
-    WHERE room_id = ?
-  `);
-
   const listActiveMediaIdsStatement = database.connection.prepare(`
     SELECT DISTINCT active_media_id
     FROM rooms
     WHERE active_media_id IS NOT NULL
       AND status = 'active'
-      AND (expires_at IS NULL OR expires_at > ?)
   `);
 
   const listMediaStatement = database.connection.prepare(`
@@ -98,36 +59,42 @@ export function createCleanupService(
   `);
 
   const countStatements = {
-    totalRooms: database.connection.prepare('SELECT COUNT(*) AS count FROM rooms'),
+    totalRooms: database.connection.prepare(
+      'SELECT COUNT(*) AS count FROM rooms'
+    ),
     activeRooms: database.connection.prepare(`
       SELECT COUNT(*) AS count
       FROM rooms
       WHERE status = 'active'
-        AND (expires_at IS NULL OR expires_at > ?)
     `),
-    totalParticipants: database.connection.prepare('SELECT COUNT(*) AS count FROM participants'),
+    totalParticipants: database.connection.prepare(
+      'SELECT COUNT(*) AS count FROM participants'
+    ),
     connectedParticipants: database.connection.prepare(`
       SELECT COUNT(*) AS count
       FROM participants
       WHERE connection_state = 'connected'
     `),
-    totalMedia: database.connection.prepare('SELECT COUNT(*) AS count FROM media'),
+    totalMedia: database.connection.prepare(
+      'SELECT COUNT(*) AS count FROM media'
+    ),
     readyMedia: database.connection.prepare(`
       SELECT COUNT(*) AS count
       FROM media
       WHERE status = 'ready'
         AND hls_manifest_path IS NOT NULL
     `),
-    totalSubtitles: database.connection.prepare('SELECT COUNT(*) AS count FROM subtitles')
+    totalSubtitles: database.connection.prepare(
+      'SELECT COUNT(*) AS count FROM subtitles'
+    )
   };
 
   let lastRun: CleanupRunSummary | null = null;
 
-  function readCount(statement: ReturnType<typeof database.connection.prepare>, value?: string): number {
-    const row = (typeof value === 'string' ? statement.get(value) : statement.get()) as
-      | { count: number }
-      | undefined;
-
+  function readCount(
+    statement: ReturnType<typeof database.connection.prepare>
+  ): number {
+    const row = statement.get() as { count: number } | undefined;
     return row?.count ?? 0;
   }
 
@@ -147,9 +114,8 @@ export function createCleanupService(
   function runNow(): CleanupRunSummary {
     const startedAt = new Date().toISOString();
     const nowMs = Date.now();
-    const nowIso = new Date(nowMs).toISOString();
-    const idleCutoffMs = nowMs - env.cleanup.idleRoomTtlMinutes * 60 * 1000;
-    const retentionCutoffMs = nowMs - env.cleanup.hlsRetentionHours * 60 * 60 * 1000;
+    const retentionCutoffMs =
+      nowMs - env.cleanup.hlsRetentionHours * 60 * 60 * 1000;
     const warnings: string[] = [];
 
     let expiredRoomsClosed = 0;
@@ -158,61 +124,25 @@ export function createCleanupService(
     let subtitleFilesRemoved = 0;
     let mediaEvicted = 0;
 
-    const activeRooms = listActiveRoomsStatement.all() as CleanupRoomRow[];
-
-    for (const room of activeRooms) {
-      let nextStatus: RoomStatus | null = null;
-
-      if (room.expires_at && Date.parse(room.expires_at) <= nowMs) {
-        nextStatus = 'expired';
-      } else {
-        const participants = listParticipantsByRoomIdStatement.all(room.id) as CleanupParticipantRow[];
-        const hasConnectedParticipant = participants.some(
-          (participant) => participant.connection_state === 'connected'
-        );
-        const latestSeenMs = participants.reduce<number | null>((latest, participant) => {
-          const parsed = Date.parse(participant.last_seen_at);
-
-          if (Number.isNaN(parsed)) {
-            return latest;
-          }
-
-          if (latest === null || parsed > latest) {
-            return parsed;
-          }
-
-          return latest;
-        }, null);
-
-        if (!hasConnectedParticipant && latestSeenMs !== null && latestSeenMs <= idleCutoffMs) {
-          nextStatus = 'closed';
-        }
-      }
-
-      if (!nextStatus) {
-        continue;
-      }
-
-      updateRoomStatusStatement.run(nextStatus, room.id);
-      disconnectParticipantsByRoomIdStatement.run(nowIso, room.id);
-
-      if (nextStatus === 'expired') {
-        expiredRoomsClosed += 1;
-      } else {
-        idleRoomsClosed += 1;
-      }
-    }
-
     const activeMediaIds = new Set(
-      (listActiveMediaIdsStatement.all(nowIso) as Array<{ active_media_id: string | null }>)
+      (
+        listActiveMediaIdsStatement.all() as Array<{
+          active_media_id: string | null;
+        }>
+      )
         .map((row) => row.active_media_id)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .filter(
+          (value): value is string =>
+            typeof value === 'string' && value.length > 0
+        )
     );
 
     const mediaRows = listMediaStatement.all() as CleanupMediaRow[];
     const mediaById = new Map(mediaRows.map((row) => [row.id, row]));
 
-    for (const entry of readdirSync(env.storage.hlsDir, { withFileTypes: true })) {
+    for (const entry of readdirSync(env.storage.hlsDir, {
+      withFileTypes: true
+    })) {
       if (!entry.isDirectory()) {
         continue;
       }
@@ -233,9 +163,11 @@ export function createCleanupService(
 
       const retentionReference = media.hls_generated_at ?? media.created_at;
       const retentionReferenceMs = Date.parse(retentionReference);
-      const pastRetention = Number.isNaN(retentionReferenceMs)
-        || retentionReferenceMs <= retentionCutoffMs;
-      const shouldRemoveReadyArtifacts = media.status === 'ready' && pastRetention;
+      const pastRetention =
+        Number.isNaN(retentionReferenceMs) ||
+        retentionReferenceMs <= retentionCutoffMs;
+      const shouldRemoveReadyArtifacts =
+        media.status === 'ready' && pastRetention;
       const shouldRemoveStaleArtifacts = media.status !== 'ready';
 
       if (!shouldRemoveReadyArtifacts && !shouldRemoveStaleArtifacts) {
@@ -247,7 +179,13 @@ export function createCleanupService(
       }
 
       if (media.status === 'ready' || media.hls_manifest_path) {
-        updateMediaStatusStatement.run('error', null, null, RETENTION_NOTICE, media.id);
+        updateMediaStatusStatement.run(
+          'error',
+          null,
+          null,
+          RETENTION_NOTICE,
+          media.id
+        );
         mediaEvicted += 1;
       }
     }
@@ -266,7 +204,9 @@ export function createCleanupService(
       }
     }
 
-    for (const entry of readdirSync(env.storage.subtitleDir, { withFileTypes: true })) {
+    for (const entry of readdirSync(env.storage.subtitleDir, {
+      withFileTypes: true
+    })) {
       const targetPath = resolve(env.storage.subtitleDir, entry.name);
 
       if (knownSubtitlePaths.has(targetPath)) {
@@ -306,11 +246,9 @@ export function createCleanupService(
     },
 
     getDiagnostics(): SystemDiagnostics {
-      const nowIso = new Date().toISOString();
-
       return {
         totalRooms: readCount(countStatements.totalRooms),
-        activeRooms: readCount(countStatements.activeRooms, nowIso),
+        activeRooms: readCount(countStatements.activeRooms),
         totalParticipants: readCount(countStatements.totalParticipants),
         connectedParticipants: readCount(countStatements.connectedParticipants),
         totalMedia: readCount(countStatements.totalMedia),

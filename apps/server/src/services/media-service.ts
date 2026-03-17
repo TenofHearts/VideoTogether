@@ -1,6 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs';
+import {
+  createReadStream,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  rmSync
+} from 'node:fs';
 import { basename, extname, resolve } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -99,7 +105,9 @@ function mapSubtitle(row: SubtitleRow): Subtitle {
 
 function sanitizeFileName(fileName: string): string {
   const baseName = basename(fileName).trim();
-  const extension = extname(baseName).slice(0, 16).replace(/[^.\w-]/g, '');
+  const extension = extname(baseName)
+    .slice(0, 16)
+    .replace(/[^.\w-]/g, '');
   const nameWithoutExtension = baseName.slice(
     0,
     baseName.length - extname(baseName).length
@@ -145,7 +153,11 @@ function buildUrlFromBase(baseUrl: string, relativePath: string): string {
   return normalizedBase.toString();
 }
 
-function createPlayerUrl(webOrigin: string, mediaId: string, roomToken?: string): string {
+function createPlayerUrl(
+  webOrigin: string,
+  mediaId: string,
+  roomToken?: string
+): string {
   const playerUrl = new URL(buildUrlFromBase(webOrigin, ''));
   playerUrl.searchParams.set('mediaId', mediaId);
 
@@ -212,7 +224,10 @@ function getSubtitleFormat(fileName: string): Subtitle['format'] {
   const extension = extname(fileName).toLowerCase();
 
   if (!supportedSubtitleExtensions.has(extension)) {
-    throw new HttpError(415, 'Unsupported subtitle file. Expected .srt, .vtt, or .ass');
+    throw new HttpError(
+      415,
+      'Unsupported subtitle file. Expected .srt, .vtt, or .ass'
+    );
   }
 
   return extension.slice(1) as Subtitle['format'];
@@ -369,14 +384,6 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     WHERE id = ?
   `);
 
-  const countActiveRoomsByMediaStatement = database.connection.prepare(`
-    SELECT COUNT(*) AS room_count
-    FROM rooms
-    WHERE active_media_id = ?
-      AND status = 'active'
-      AND (expires_at IS NULL OR expires_at > ?)
-  `);
-
   async function probeMedia(media: Media) {
     const output = await runCommand(env.mediaProcessing.ffprobePath, [
       '-v',
@@ -479,7 +486,13 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         resolve(outputDirectory, 'master.m3u8')
       ]);
 
-      updateMediaStatusStatement.run('ready', 'master.m3u8', new Date().toISOString(), null, mediaId);
+      updateMediaStatusStatement.run(
+        'ready',
+        'master.m3u8',
+        new Date().toISOString(),
+        null,
+        mediaId
+      );
     } catch (error) {
       updateMediaStatusStatement.run(
         'error',
@@ -514,6 +527,22 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     };
   }
 
+  function requireDeletableMedia(mediaId: string): Media {
+    const media = service.getMediaById(mediaId);
+
+    if (!media) {
+      throw new HttpError(404, 'Media not found');
+    }
+
+    if (activeProcessingJobs.has(mediaId)) {
+      throw new HttpError(
+        409,
+        'Cannot delete media while processing is active'
+      );
+    }
+
+    return media;
+  }
   const service = {
     listRecentMedia(limit = 12): MediaListResponse {
       const rows = listMediaStatement.all(limit) as MediaRow[];
@@ -583,7 +612,10 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       const media = service.getMediaById(mediaId);
 
       if (!media) {
-        throw new HttpError(500, 'Media import completed but record was missing');
+        throw new HttpError(
+          500,
+          'Media import completed but record was missing'
+        );
       }
 
       const processingQueued =
@@ -630,7 +662,10 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       } catch (error) {
         rmSync(sourcePath, { force: true });
         rmSync(servedPath, { force: true });
-        throw new HttpError(422, `Subtitle import failed: ${toProcessingErrorMessage(error)}`);
+        throw new HttpError(
+          422,
+          `Subtitle import failed: ${toProcessingErrorMessage(error)}`
+        );
       }
 
       insertSubtitleStatement.run(
@@ -647,7 +682,10 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       const subtitle = service.getSubtitleById(subtitleId);
 
       if (!subtitle) {
-        throw new HttpError(500, 'Subtitle import completed but record was missing');
+        throw new HttpError(
+          500,
+          'Subtitle import completed but record was missing'
+        );
       }
 
       return {
@@ -683,26 +721,12 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       return buildOperationResponse(latestMedia, processingQueued);
     },
 
+    ensureMediaCanBeDeleted(mediaId: string): void {
+      requireDeletableMedia(mediaId);
+    },
+
     deleteMedia(mediaId: string): void {
-      const media = service.getMediaById(mediaId);
-
-      if (!media) {
-        throw new HttpError(404, 'Media not found');
-      }
-
-      if (activeProcessingJobs.has(mediaId)) {
-        throw new HttpError(409, 'Cannot delete media while processing is active');
-      }
-
-      const activeRoomCount = countActiveRoomsByMediaStatement.get(
-        mediaId,
-        new Date().toISOString()
-      ) as { room_count: number } | undefined;
-
-      if ((activeRoomCount?.room_count ?? 0) > 0) {
-        throw new HttpError(409, 'Cannot delete media while it is assigned to an active room');
-      }
-
+      const media = requireDeletableMedia(mediaId);
       const subtitles = service.listSubtitlesByMediaId(mediaId);
 
       removePathOrThrow(media.sourcePath);
