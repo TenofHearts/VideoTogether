@@ -1,5 +1,7 @@
 # VideoTogether
 
+> [English](./README.md)
+
 VideoTogether 是一个面向局域网内两人私密观影场景的视频同步应用。
 
 主机端在本机导入视频文件，使用 `ffprobe` / `ffmpeg` 处理成 HLS 流，创建私密房间链接，然后把链接发给另一位观看者。观看者不需要安装桌面端，只需要用浏览器打开房间链接即可。

@@ -1,5 +1,7 @@
 # VideoTogether
 
+> [简体中文](./README_zh.md)
+
 VideoTogether is a private movie sharing project designed for two people in the same LAN.
 
 The host imports a local video file, processes it into HLS with `ffprobe` and `ffmpeg`, creates a private room link, and shares that link with a second viewer. The viewer does not need the desktop app and can join directly from a browser.
