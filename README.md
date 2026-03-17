@@ -1,215 +1,297 @@
 # VideoShare
 
-VideoShare is a private desktop-first movie sharing app for two people. The host runs the local server and Tauri desktop app, imports a movie from disk, processes it into HLS, creates a secret room URL, and shares that URL with the second viewer.
+VideoShare is a desktop-first private movie sharing project designed for two people.
 
-Current implementation status:
+The host imports a local video file, processes it into HLS with `ffprobe` and `ffmpeg`, creates a private room link, and shares that link with a second viewer. The viewer does not need the desktop app and can join directly from a browser.
 
-- Phases 0 through 6 are complete.
-- Phase 7 (WebRTC video call) is currently deferred.
-- Shared browser playback, subtitles, room presence, and synchronized play/pause/seek are implemented.
+The current primary workflow is: run locally, share quickly, and keep playback synchronized for two people.
 
-## What the app does today
+## Features
 
-- Host imports a local movie file into the local server.
-- Server probes the file with `ffprobe` and generates HLS output with `ffmpeg`.
-- Host can upload `.srt`, `.vtt`, or `.ass` subtitles.
-- Host creates a secret room URL from the Tauri desktop dashboard.
-- Guest opens `/room/:token` in a browser.
-- Both viewers can watch the same movie and stay synchronized through server-authoritative playback state.
-- Subtitle selection is room-backed.
-- Room presence and reconnect recovery are implemented.
+Implemented today:
 
-## Repository layout
+- Local video import
+- Media probing with `ffprobe`
+- HLS transcoding and segmentation with `ffmpeg`
+- Subtitle import and conversion for `.srt`, `.vtt`, and `.ass`
+- Private room creation and shareable links
+- Browser-based room playback
+- Two-person synchronized `play / pause / seek`
+- Room-level subtitle selection sync
+- Participant presence and reconnect recovery
+- Tauri desktop host dashboard
+- One-command host startup flow
+- Desktop installer packaging
+
+Not implemented yet:
+
+- WebRTC voice/video calling
+
+## Repository Layout
 
 ```text
 apps/
-  desktop/   Tauri host dashboard
-  server/    Fastify + Socket.IO + SQLite + FFmpeg orchestration
-  web/       Browser room UI
+  desktop/   Tauri desktop host dashboard
+  server/    Fastify + Socket.IO + SQLite + FFmpeg backend
+  web/       Browser playback and room UI
 packages/
   shared-types/
   shared-schemas/
   shared-utils/
 storage/
-  media/     uploaded source files
-  hls/       generated playlists and segments
-  subtitles/ converted and served subtitle files
+  media/     uploaded source videos
+  hls/       generated HLS manifests and segments
+  subtitles/ converted subtitle files
   db/        SQLite database
-  temp/      temporary processing files
+  temp/      temporary processing directory
+infra/
+  docker-compose.yml
+  scripts/   startup, shutdown, packaging, and ngrok helper scripts
 ```
 
-## Prerequisites
+## Requirements
 
-You need these installed on the host machine:
+You need these on the host machine:
 
 - Node.js 22+
 - npm 11+
 - `ffmpeg`
 - `ffprobe`
-- Tauri Windows prerequisites if you want to run the desktop shell in dev mode
-- Docker Desktop if you want to use the containerized server flow
+- Rust / Tauri Windows build prerequisites
+  - required for desktop development or packaging
+- Docker Desktop
+  - only required when `USE_DOCKER=true`
+- ngrok
+  - only required if you want to expose the local host flow to the public internet
 
-## Environment
+## Environment Variables
 
 Start from `.env.example`.
 
 Important variables:
 
+- `USE_DOCKER`
+  - controls whether the host startup script uses Docker for the server
+  - default: `false`
 - `PORT`
+  - local server port
+  - default: `3000`
+- `API_BASE_URL`
+  - API base URL used by the desktop app and helper scripts
+  - default: `http://localhost:3000`
 - `PUBLIC_BASE_URL`
+  - public-facing base URL used when generating share links
+  - for local-only usage, this is usually the same as `API_BASE_URL`
 - `WEB_URL`
-- `ROOM_TOKEN_BYTES`
-- `HLS_OUTPUT_DIR`
-- `MEDIA_INPUT_DIR`
-- `SUBTITLE_DIR`
-- `TEMP_DIR`
+  - frontend URL used for room links
+  - in local production mode this is usually `http://localhost:3000`
+  - in development mode this is usually `http://localhost:5173`
+- `LAN_IP`
+  - fixed IPv4 used by the desktop app when generating LAN room URLs
+  - set this to the exact IPv4 you want to expose, such as your ZeroTier IPv4
+  - no automatic detection is used
 - `FFMPEG_PATH`
+  - path to the `ffmpeg` executable
 - `FFPROBE_PATH`
+  - path to the `ffprobe` executable
 
-Recommended local development defaults:
+Current `.env.example` defaults assume:
 
-- server: `http://localhost:3000`
-- web: `http://localhost:5173`
-- desktop dev shell: `npm run dev:desktop`
+- development web URL: `http://localhost:5173`
+- production-like local host flow: `http://localhost:3000`
+- Docker disabled by default
+- LAN URL generation uses the fixed `LAN_IP` value
 
-If you want generated secret room links to point to a different frontend origin, set `WEB_URL` consistently for server and desktop.
+## Install Dependencies
 
-## Install dependencies
+From the repository root:
 
 ```bash
 npm install
 ```
 
-## Main commands
+## Recommended Usage
+
+### 1. Start the host flow
 
 ```bash
-npm run dev:server
-npm run dev:web
-npm run dev:desktop
-npm run docker:up
-npm run docker:down
-npm run typecheck
-npm run lint
+npm run host:start
 ```
 
-## Recommended local usage
+This command will:
 
-### 1. Start the backend
+- build the production `web` assets
+- build the production `server` assets
+- start the local production server
+- launch the Tauri desktop host dashboard
 
-For the current development flow, start the server directly:
+Default behavior:
+
+- Docker is not used
+- share links point to `http://localhost:3000`
+- LAN room URLs are only generated from `LAN_IP`
+
+To stop the host flow:
 
 ```bash
-npm run dev:server
+npm run host:stop
 ```
 
-You should then have:
+This stops the background local server process tree started by `host:start`.
 
-- API on `http://localhost:3000`
-- health endpoint on `http://localhost:3000/health`
-
-### 2. Start the web app
+If you only want the local server and do not want to launch the desktop app:
 
 ```bash
-npm run dev:web
+npm run host:start -- -SkipDesktop
 ```
 
-Default local frontend:
+### 2. Use the desktop host dashboard
 
-- `http://localhost:5173`
+Recommended host flow inside the desktop app:
 
-### 3. Start the desktop host dashboard
-
-```bash
-npm run dev:desktop
-```
-
-The Tauri app is the main host control surface in the current implementation.
-
-### 4. Host workflow in the desktop app
-
-Inside the desktop app:
-
-1. Pick a local movie file, or reuse a previously uploaded movie from the media library.
-2. Wait for processing to finish if the movie is new.
+1. Select a local video file, or reuse an existing media item from the library.
+2. Wait for processing to complete.
 3. Optionally upload subtitle files.
-4. Choose the initial subtitle for the room.
-5. Set host display name and room expiry.
+4. Choose the room's initial subtitle.
+5. Set the host display name and room expiration.
 6. Create the room.
-7. Copy the generated room URL from the share panel.
-8. If the host also wants to watch in the browser, use the desktop app's Local host room URL or LAN host room URL.
+7. Copy the share link and send it to the second viewer.
 
-The desktop host dashboard also lets you:
+The desktop app also provides:
 
-- review processing progress
-- inspect media metadata
-- close the active room
-- retry failed processing
-- delete unused media
-- monitor participant presence
+- processing status
+- media metadata
+- room status
+- participant presence
+- subtitle updates
+- room closing
+- unused media deletion
+- local URL and LAN URL copy actions
 
-### 5. Guest workflow
+If you want the desktop app to generate LAN URLs, set `LAN_IP` to the exact IPv4 you want to use, for example your ZeroTier IPv4. The app does not auto-detect LAN IPs.
+
+### 3. Guest usage
 
 The guest does not need the desktop app.
 
-Guest flow:
+They only need to:
 
-1. Open the secret room URL in a browser.
+1. Open the room link in a browser.
 2. Enter a display name.
 3. Join the room.
-4. Watch the movie in the browser player.
+4. Watch the synchronized stream.
 
-### 5.1 Host browser playback
+## Docker Is Optional
 
-If the host wants to open the same room in a browser player:
-
-1. Create the room from the desktop app.
-2. Copy Local host room URL for the same machine, or LAN host room URL for another device on the same network.
-3. Open that URL in a browser.
-
-The host URL reuses the existing host participant instead of consuming the guest slot.
-
-### 6. Shared playback behavior
-
-Implemented today:
-
-- synchronized play
-- synchronized pause
-- synchronized seek
-- playback drift detection and resync
-- room-backed subtitle selection
-- reconnect recovery
-- participant presence
-
-Not implemented yet:
-
-- WebRTC voice/video call
-
-## Containerized server flow
-
-If you want to run the server in Docker instead of directly through Node:
+If you want `host:start` to run the server through Docker, set:
 
 ```bash
-npm run docker:up
+USE_DOCKER=true
 ```
 
-This uses `infra/docker-compose.yml` and mounts:
+Then run the same command:
 
-- `storage/media`
-- `storage/hls`
-- `storage/subtitles`
-- `storage/db`
-- `storage/temp`
+```bash
+npm run host:start
+```
 
-The desktop app itself is still run locally on the host machine.
+In this mode the script will:
 
-## Useful endpoints
+- use `infra/docker-compose.yml`
+- run the server inside a container
+- mount the local `storage/*` directories
+- still run the desktop app on the host machine
 
-### Health and diagnostics
+When `USE_DOCKER=false`:
+
+- `host:start` does not call Docker
+- `host:stop` does not touch Docker either
+
+## Local Development Mode
+
+If you want to work with separate dev processes for web, server, and desktop:
+
+```bash
+npm run dev:server
+npm run dev:web
+npm run dev:desktop
+```
+
+Default development endpoints:
+
+- API: `http://localhost:3000`
+- Web: `http://localhost:5173`
+- Desktop dev shell: `npm run dev:desktop`
+
+## Desktop Packaging
+
+To build desktop installers:
+
+```bash
+npm run desktop:package
+```
+
+Current bundle outputs include:
+
+- MSI
+- NSIS installer
+
+Bundle output directory:
+
+- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoShare/apps/desktop/src-tauri/target/release/bundle)
+
+## ngrok Usage
+
+If you want to expose the local host flow through ngrok:
+
+1. Start the host flow first.
+2. Make sure your ngrok configuration is ready.
+3. Run:
+
+```bash
+npm run host:ngrok
+```
+
+If you use a reserved domain, it is better to set these variables before starting the host flow:
+
+- `PUBLIC_BASE_URL`
+- `WEB_URL`
+
+That way the generated room links will already point to the public HTTPS domain.
+
+## Common Commands
+
+- `npm run host:start`
+  - builds the production web and server bundles, starts the local host server, and launches the Tauri desktop dashboard
+- `npm run host:stop`
+  - stops the background server process tree started by `host:start`
+- `npm run host:start -- -SkipDesktop`
+  - starts the local host server only, without launching the desktop app
+- `npm run host:ngrok`
+  - exposes the local host flow through ngrok after the server is already running
+- `npm run desktop:package`
+  - builds the Tauri desktop installer bundles
+- `npm run dev:server`
+  - runs the Fastify server in development watch mode
+- `npm run dev:web`
+  - runs the Vite web app in development mode
+- `npm run dev:desktop`
+  - runs the Tauri desktop app in development mode
+- `npm run build:host`
+  - builds production assets for `apps/web` and `apps/server`
+- `npm run lint`
+  - runs ESLint across all workspaces that define a lint script
+- `npm run typecheck`
+  - runs TypeScript type checking across all workspaces without emitting build artifacts
+
+## Routes and Endpoints
+
+Health and diagnostics:
 
 - `GET /health`
 - `GET /api/system/status`
 
-### Rooms
+Room endpoints:
 
 - `POST /api/rooms`
 - `GET /api/rooms/:token`
@@ -217,7 +299,7 @@ The desktop app itself is still run locally on the host machine.
 - `POST /api/rooms/:token/subtitle`
 - `POST /api/rooms/:token/close`
 
-### Media
+Media endpoints:
 
 - `GET /api/media`
 - `POST /api/media/import`
@@ -227,38 +309,24 @@ The desktop app itself is still run locally on the host machine.
 - `POST /api/media/:id/subtitles`
 - `GET /api/media/:id/subtitles`
 
-### Static playback assets
+Static playback assets:
 
 - `GET /media/:mediaId/*`
 - `GET /subtitles/:subtitleId.vtt`
+- `GET /`
+- `GET /room/:token`
 
-## Useful workspace checks
+## Current Limitations
 
-```bash
-npm run typecheck --workspace @videoshare/server
-npm run lint --workspace @videoshare/server
-npm run build --workspace @videoshare/server
-npm run typecheck --workspace @videoshare/web
-npm run lint --workspace @videoshare/web
-npm run build --workspace @videoshare/web
-npm run typecheck --workspace @videoshare/desktop
-npm run lint --workspace @videoshare/desktop
-npm run build --workspace @videoshare/desktop
-```
+- WebRTC voice/video calling is not implemented yet.
+- The current product shape is optimized for "host uses desktop app, guest uses browser".
+- If you use dynamic public URLs, you still need to set `PUBLIC_BASE_URL` and `WEB_URL` correctly.
 
-Note: on this machine, some Vite builds may fail inside the sandbox with `spawn EPERM`; rerunning outside the sandbox succeeds.
-
-## Current limitations
-
-- Phase 7 WebRTC calling is deferred and not implemented.
-- Public internet exposure through ngrok is planned but not yet packaged into a one-command host flow.
-- The desktop app is currently a host dashboard, not a full remote participant client.
-- The local Tauri command surface is still minimal and focused on status discovery.
-
-## Practical notes
+## Notes
 
 - SQLite currently uses Node 22 built-in `node:sqlite`.
-- The web player uses bundled `hls.js`; it does not depend on a runtime CDN fetch.
-- `PUBLIC_BASE_URL` and `WEB_URL` can include subpaths, and generated URLs preserve those prefixes.
-- During local development, the desktop app can show both local and LAN room URLs.
-- Media deletion is blocked while the media is still assigned to an active room.
+- Browser playback uses bundled `hls.js`.
+- In production mode, the server serves `apps/web/dist` directly.
+- LAN URLs are generated only from the configured `LAN_IP` value.
+- Media deletion is blocked if the media is still attached to an active room.
+

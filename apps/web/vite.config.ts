@@ -14,6 +14,9 @@ export default defineConfig(({ mode }) => {
   const port = Number(webUrl.port || (webUrl.protocol === 'https:' ? '443' : '80'));
 
   return {
+    base: webUrl.pathname.endsWith('/')
+      ? webUrl.pathname
+      : `${webUrl.pathname}/`,
     plugins: [react()],
     server: {
       host: webUrl.hostname === 'localhost' ? '0.0.0.0' : webUrl.hostname,

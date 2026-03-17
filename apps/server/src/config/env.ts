@@ -30,10 +30,12 @@ function resolveDatabasePath(databaseUrl?: string): string {
 }
 
 const envSchema = z.object({
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
   WEB_URL: z.string().optional(),
   WEB_ORIGIN: z.string().optional(),
+  WEB_DIST_DIR: z.string().optional(),
   PUBLIC_BASE_URL: z.string().optional(),
   DATABASE_URL: z.string().optional(),
   ROOM_TOKEN_BYTES: z.coerce.number().int().min(16).max(64).default(32),
@@ -53,23 +55,32 @@ export type AppEnv = ReturnType<typeof loadEnv>;
 export function loadEnv() {
   const parsedEnv = envSchema.parse(process.env);
   const databasePath = resolveDatabasePath(parsedEnv.DATABASE_URL);
+  const publicBaseUrl =
+    parsedEnv.PUBLIC_BASE_URL && parsedEnv.PUBLIC_BASE_URL.length > 0
+      ? parsedEnv.PUBLIC_BASE_URL
+      : `http://localhost:${parsedEnv.PORT}`;
   const webOrigin =
     parsedEnv.WEB_URL && parsedEnv.WEB_URL.length > 0
       ? parsedEnv.WEB_URL
       : parsedEnv.WEB_ORIGIN && parsedEnv.WEB_ORIGIN.length > 0
         ? parsedEnv.WEB_ORIGIN
-        : 'http://localhost:5173';
+        : parsedEnv.NODE_ENV === 'production'
+          ? publicBaseUrl
+          : 'http://localhost:5173';
 
   return {
+    nodeEnv: parsedEnv.NODE_ENV,
     host: parsedEnv.HOST,
     port: parsedEnv.PORT,
     webOrigin,
-    publicBaseUrl:
-      parsedEnv.PUBLIC_BASE_URL && parsedEnv.PUBLIC_BASE_URL.length > 0
-        ? parsedEnv.PUBLIC_BASE_URL
-        : `http://localhost:${parsedEnv.PORT}`,
+    publicBaseUrl,
     roomTokenBytes: parsedEnv.ROOM_TOKEN_BYTES,
     databasePath,
+    web: {
+      distDir:
+        parsedEnv.WEB_DIST_DIR ??
+        resolve(workspaceRoot, 'apps', 'web', 'dist')
+    },
     storage: {
       mediaDir: parsedEnv.MEDIA_INPUT_DIR ?? getDefaultStoragePath('media'),
       hlsDir: parsedEnv.HLS_OUTPUT_DIR ?? getDefaultStoragePath('hls'),

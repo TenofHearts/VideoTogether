@@ -1672,16 +1672,16 @@ export default function App() {
       <div className="mx-auto flex max-w-6xl flex-col gap-8">
         <section className="rounded-[2rem] border border-white/70 bg-white/85 p-8 shadow-panel backdrop-blur">
           <p className="text-sm uppercase tracking-[0.35em] text-coral">
-            Phase 5
+            Private watch room
           </p>
           <h1 className="mt-4 font-serif text-4xl font-semibold leading-tight md:text-6xl">
-            Room playback now favors smooth watching with shared play,
-            pause, and seek controls.
+            Stream your local movie, keep playback in sync, and share one
+            private room link.
           </h1>
           <p className="mt-4 max-w-3xl text-lg text-slate-600">
-            Use <span className="font-mono">/room/&lt;token&gt;</span> to join a
-            private session, recover the current room state after reconnects,
-            and keep control changes shared without aggressive drift fixes.
+            Open a room from the desktop host, watch through the browser
+            player, keep subtitle changes shared, and recover smoothly after
+            reconnects.
           </p>
         </section>
 
@@ -1704,7 +1704,7 @@ export default function App() {
                   onClick={() => navigateHome(null)}
                   type="button"
                 >
-                  Back to landing
+                  Back to browser
                 </button>
               ) : playbackMedia ? (
                 <button
@@ -2208,4 +2208,5 @@ export default function App() {
     </main>
   );
 }
+
 

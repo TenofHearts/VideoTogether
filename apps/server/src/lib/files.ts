@@ -4,6 +4,15 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import type { FastifyReply } from 'fastify';
 
 const contentTypes = new Map<string, string>([
+  ['.html', 'text/html; charset=utf-8'],
+  ['.css', 'text/css; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.svg', 'image/svg+xml'],
+  ['.ico', 'image/x-icon'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
   ['.m3u8', 'application/vnd.apple.mpegurl'],
   ['.ts', 'video/mp2t'],
   ['.m4s', 'video/iso.segment'],
@@ -25,6 +34,18 @@ function getCacheControl(filePath: string): string {
   }
 
   if (extension === '.ts' || extension === '.m4s') {
+    return 'public, max-age=604800, immutable';
+  }
+
+  if (
+    extension === '.js' ||
+    extension === '.css' ||
+    extension === '.svg' ||
+    extension === '.png' ||
+    extension === '.jpg' ||
+    extension === '.jpeg' ||
+    extension === '.ico'
+  ) {
     return 'public, max-age=604800, immutable';
   }
 
@@ -74,4 +95,3 @@ export async function streamFile(reply: FastifyReply, filePath: string) {
 
   return reply.send(createReadStream(filePath));
 }
-

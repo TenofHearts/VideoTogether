@@ -1,7 +1,7 @@
 {
   "name": "videoshare",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -11,6 +11,11 @@
     "dev:web": "npm run dev --workspace @videoshare/web",
     "dev:server": "npm run dev --workspace @videoshare/server",
     "dev:desktop": "npm run tauri:dev --workspace @videoshare/desktop",
+    "build:host": "npm run build --workspace @videoshare/web && npm run build --workspace @videoshare/server",
+    "host:start": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-host.ps1",
+    "host:stop": "powershell -ExecutionPolicy Bypass -File infra/scripts/stop-host.ps1",
+    "host:ngrok": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-ngrok.ps1",
+    "desktop:package": "powershell -ExecutionPolicy Bypass -File infra/scripts/package-desktop.ps1",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",

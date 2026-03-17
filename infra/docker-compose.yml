@@ -4,19 +4,26 @@ services:
       context: ..
       dockerfile: apps/server/Dockerfile
     ports:
-      - '3000:3000'
-    env_file:
-      - ../.env.example
+      - '${PORT:-3000}:3000'
     environment:
-      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-production}
       HOST: 0.0.0.0
+      PORT: 3000
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3000}
+      WEB_URL: ${WEB_URL:-http://localhost:3000}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
+      WEB_DIST_DIR: /app/apps/web/dist
       DATABASE_URL: file:/app/storage/db/app.db
-      PUBLIC_BASE_URL: http://localhost:3000
-      WEB_ORIGIN: http://localhost:5173
       HLS_OUTPUT_DIR: /app/storage/hls
       MEDIA_INPUT_DIR: /app/storage/media
       SUBTITLE_DIR: /app/storage/subtitles
       TEMP_DIR: /app/storage/temp
+      FFMPEG_PATH: /usr/bin/ffmpeg
+      FFPROBE_PATH: /usr/bin/ffprobe
+      ROOM_TOKEN_BYTES: ${ROOM_TOKEN_BYTES:-32}
+      CLEANUP_INTERVAL_MINUTES: ${CLEANUP_INTERVAL_MINUTES:-10}
+      ROOM_IDLE_TTL_MINUTES: ${ROOM_IDLE_TTL_MINUTES:-180}
+      HLS_RETENTION_HOURS: ${HLS_RETENTION_HOURS:-72}
     volumes:
       - ../storage/media:/app/storage/media
       - ../storage/hls:/app/storage/hls

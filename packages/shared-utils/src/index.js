@@ -1,6 +1,9 @@
 function isLoopbackHostname(hostname) {
     return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
 }
+function stripTrailingSlash(url) {
+    return url.replace(/\/+$/, '');
+}
 export function getApiBaseUrl(explicitUrl) {
     if (explicitUrl && explicitUrl.length > 0) {
         try {
@@ -10,13 +13,13 @@ export function getApiBaseUrl(explicitUrl) {
                 && !isLoopbackHostname(globalThis.window.location.hostname)
                 && isLoopbackHostname(parsedUrl.hostname)) {
                 parsedUrl.hostname = globalThis.window.location.hostname;
-                return parsedUrl.toString();
+                return stripTrailingSlash(parsedUrl.toString());
             }
         }
         catch {
-            return explicitUrl;
+            return stripTrailingSlash(explicitUrl);
         }
-        return explicitUrl;
+        return stripTrailingSlash(explicitUrl);
     }
     if (typeof globalThis.window !== 'undefined' && globalThis.window.location.protocol.startsWith('http')) {
         return `${globalThis.window.location.protocol}//${globalThis.window.location.hostname}:3000`;
@@ -43,4 +46,5 @@ export function buildUrlFromBase(baseUrl, relativePath) {
 export function buildRoomUrl(baseUrl, token) {
     return buildUrlFromBase(baseUrl, `room/${token}`);
 }
+
 

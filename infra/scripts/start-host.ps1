@@ -1,0 +1,254 @@
+param(
+  [switch]$SkipBuild,
+  [switch]$SkipDesktop
+)
+
+$ErrorActionPreference = 'Stop'
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$tempDirectory = Join-Path $repoRoot '.codex-tmp'
+$serverPidPath = Join-Path $tempDirectory 'host-server.pid'
+$serverLogPath = Join-Path $tempDirectory 'host-server.log'
+$serverScriptPath = Join-Path $tempDirectory 'run-local-server.ps1'
+$composeEnvPath = Join-Path $tempDirectory 'host-compose.env'
+
+New-Item -ItemType Directory -Force -Path $tempDirectory | Out-Null
+
+function Get-EnvMap([string]$Path) {
+  $map = @{}
+
+  if (-not (Test-Path $Path)) {
+    return $map
+  }
+
+  foreach ($line in Get-Content $Path) {
+    $trimmed = $line.Trim()
+
+    if (-not $trimmed -or $trimmed.StartsWith('#')) {
+      continue
+    }
+
+    $separatorIndex = $trimmed.IndexOf('=')
+
+    if ($separatorIndex -lt 1) {
+      continue
+    }
+
+    $key = $trimmed.Substring(0, $separatorIndex).Trim()
+    $value = $trimmed.Substring($separatorIndex + 1).Trim()
+    $map[$key] = $value
+  }
+
+  return $map
+}
+
+function Get-EnvValue($Map, [string]$Key, [string]$DefaultValue) {
+  if ($Map.ContainsKey($Key) -and $Map[$Key]) {
+    return $Map[$Key]
+  }
+
+  return $DefaultValue
+}
+
+function Test-EnvFlag([string]$Value) {
+  return @('1', 'true', 'yes', 'on') -contains $Value.ToLowerInvariant()
+}
+
+function Set-ProcessEnv($Variables) {
+  foreach ($entry in $Variables.GetEnumerator()) {
+    Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
+  }
+}
+
+function Stop-ProcessTree([int]$ProcessId) {
+  $taskkillCommand = Get-Command taskkill.exe -ErrorAction SilentlyContinue
+
+  if ($taskkillCommand) {
+    & $taskkillCommand.Source /PID $ProcessId /T /F *> $null
+    return
+  }
+
+  Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+}
+
+function Wait-ForServer([string]$Url, [int]$TimeoutSeconds, [int]$ProcessId) {
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Seconds 1
+
+    try {
+      Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+    } catch {
+      return $false
+    }
+
+    try {
+      $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
+
+      if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 300) {
+        return $true
+      }
+    } catch {
+      # Keep polling until the process exits or the timeout is hit.
+    }
+  }
+
+  return $false
+}
+
+$envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
+  Join-Path $repoRoot '.env'
+} else {
+  Join-Path $repoRoot '.env.example'
+}
+
+$envMap = Get-EnvMap $envPath
+$useDocker = Test-EnvFlag (Get-EnvValue $envMap 'USE_DOCKER' 'false')
+$apiBaseUrl = Get-EnvValue $envMap 'API_BASE_URL' 'http://localhost:3000'
+$publicBaseUrl = Get-EnvValue $envMap 'PUBLIC_BASE_URL' $apiBaseUrl
+$rawWebUrl = Get-EnvValue $envMap 'WEB_URL' $publicBaseUrl
+$serverHealthUrl = if ($apiBaseUrl.EndsWith('/')) {
+  "${apiBaseUrl}health"
+} else {
+  "${apiBaseUrl}/health"
+}
+$webUrl = if ($rawWebUrl -match '^https?://(localhost|127\.0\.0\.1):(5173|5174)/?$') {
+  $publicBaseUrl
+} else {
+  $rawWebUrl
+}
+
+$runtimeEnv = [ordered]@{
+  NODE_ENV = 'production'
+  HOST = Get-EnvValue $envMap 'HOST' '0.0.0.0'
+  PORT = Get-EnvValue $envMap 'PORT' '3000'
+  API_BASE_URL = $apiBaseUrl
+  PUBLIC_BASE_URL = $publicBaseUrl
+  WEB_URL = $webUrl
+  WEB_ORIGIN = $webUrl
+  LAN_IP = Get-EnvValue $envMap 'LAN_IP' ''
+  VITE_API_BASE_URL = $publicBaseUrl
+  ROOM_TOKEN_BYTES = Get-EnvValue $envMap 'ROOM_TOKEN_BYTES' '32'
+  FFMPEG_PATH = Get-EnvValue $envMap 'FFMPEG_PATH' 'ffmpeg'
+  FFPROBE_PATH = Get-EnvValue $envMap 'FFPROBE_PATH' 'ffprobe'
+  CLEANUP_INTERVAL_MINUTES = Get-EnvValue $envMap 'CLEANUP_INTERVAL_MINUTES' '10'
+  ROOM_IDLE_TTL_MINUTES = Get-EnvValue $envMap 'ROOM_IDLE_TTL_MINUTES' '180'
+  HLS_RETENTION_HOURS = Get-EnvValue $envMap 'HLS_RETENTION_HOURS' '72'
+}
+
+if (-not $SkipBuild) {
+  Set-Location $repoRoot
+  Set-ProcessEnv $runtimeEnv
+  Write-Host 'Building production web and server assets...'
+  & npm run build:host
+
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Production build failed.'
+  }
+}
+
+if ($useDocker) {
+  $composeEnv = [ordered]@{
+    NODE_ENV = $runtimeEnv.NODE_ENV
+    HOST = '0.0.0.0'
+    PORT = '3000'
+    PUBLIC_BASE_URL = $runtimeEnv.PUBLIC_BASE_URL
+    WEB_URL = $runtimeEnv.WEB_URL
+    WEB_ORIGIN = $runtimeEnv.WEB_ORIGIN
+    WEB_DIST_DIR = '/app/apps/web/dist'
+    DATABASE_URL = 'file:/app/storage/db/app.db'
+    HLS_OUTPUT_DIR = '/app/storage/hls'
+    MEDIA_INPUT_DIR = '/app/storage/media'
+    SUBTITLE_DIR = '/app/storage/subtitles'
+    TEMP_DIR = '/app/storage/temp'
+    FFMPEG_PATH = '/usr/bin/ffmpeg'
+    FFPROBE_PATH = '/usr/bin/ffprobe'
+    ROOM_TOKEN_BYTES = $runtimeEnv.ROOM_TOKEN_BYTES
+    CLEANUP_INTERVAL_MINUTES = $runtimeEnv.CLEANUP_INTERVAL_MINUTES
+    ROOM_IDLE_TTL_MINUTES = $runtimeEnv.ROOM_IDLE_TTL_MINUTES
+    HLS_RETENTION_HOURS = $runtimeEnv.HLS_RETENTION_HOURS
+  }
+
+  ($composeEnv.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) | Set-Content $composeEnvPath
+
+  Write-Host 'Starting Dockerized server on http://localhost:3000 ...'
+  & docker compose --env-file $composeEnvPath -f infra/docker-compose.yml up -d --build app-server
+
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Docker startup failed.'
+  }
+} else {
+  $existingProcess = $null
+
+  if (Test-Path $serverPidPath) {
+    $existingPid = (Get-Content $serverPidPath | Select-Object -First 1).Trim()
+
+    if ($existingPid) {
+      try {
+        $existingProcess = Get-Process -Id ([int]$existingPid) -ErrorAction Stop
+      } catch {
+        Remove-Item $serverPidPath -Force -ErrorAction SilentlyContinue
+      }
+    }
+  }
+
+  if (-not $existingProcess) {
+    $scriptLines = @(
+      "$ErrorActionPreference = 'Stop'",
+      "Set-Location '$repoRoot'"
+    )
+
+    foreach ($entry in $runtimeEnv.GetEnumerator()) {
+      $escapedValue = $entry.Value.Replace("'", "''")
+      $scriptLines += "`$env:$($entry.Key) = '$escapedValue'"
+    }
+
+    $escapedLogPath = $serverLogPath.Replace("'", "''")
+    $scriptLines += "npm run start --workspace @videoshare/server *>&1 | Tee-Object -FilePath '$escapedLogPath' -Append"
+    $scriptLines | Set-Content $serverScriptPath
+
+    if (Test-Path $serverLogPath) {
+      Remove-Item $serverLogPath -Force
+    }
+
+    $shellExecutable = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+      'pwsh'
+    } else {
+      'powershell'
+    }
+
+    Write-Host 'Starting local production server on http://localhost:3000 ...'
+    $serverProcess = Start-Process $shellExecutable `
+      -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serverScriptPath) `
+      -WorkingDirectory $repoRoot `
+      -WindowStyle Hidden `
+      -PassThru
+    $serverProcess.Id | Set-Content $serverPidPath
+
+    if (-not (Wait-ForServer -Url $serverHealthUrl -TimeoutSeconds 20 -ProcessId $serverProcess.Id)) {
+      Stop-ProcessTree -ProcessId $serverProcess.Id
+      Remove-Item $serverPidPath -Force -ErrorAction SilentlyContinue
+      throw "Local server failed to start. See $serverLogPath for details."
+    }
+  } else {
+    Write-Host "Local server already running with PID $($existingProcess.Id)."
+  }
+}
+
+Write-Host "API: $apiBaseUrl"
+Write-Host "Share URLs: $webUrl"
+if ($runtimeEnv.LAN_IP) {
+  Write-Host "LAN IP: $($runtimeEnv.LAN_IP)"
+}
+Write-Host "Docker mode: $useDocker"
+Write-Host "Stop command: npm run host:stop"
+
+if ($SkipDesktop) {
+  return
+}
+
+Set-Location $repoRoot
+Set-ProcessEnv $runtimeEnv
+Write-Host 'Launching Tauri host dashboard...'
+& npm run tauri:dev --workspace @videoshare/desktop

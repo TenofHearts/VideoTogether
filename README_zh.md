@@ -1,0 +1,332 @@
+# VideoShare
+
+VideoShare 是一个面向两人私密观影场景的桌面优先项目。
+
+主机端在本机导入视频文件，使用 `ffprobe` / `ffmpeg` 处理成 HLS 流，创建私密房间链接，然后把链接发给另一位观看者。观看者不需要安装桌面端，只需要用浏览器打开房间链接即可。
+
+当前主打的是“本机启动、快速分享、两人同步播放”的使用方式。
+
+## 功能概览
+
+当前已实现：
+
+- 本地视频导入
+- `ffprobe` 媒体探测
+- `ffmpeg` HLS 转码与切片
+- `.srt`、`.vtt`、`.ass` 字幕导入与转换
+- 私密房间创建与分享链接
+- 浏览器端房间播放
+- 两人同步 `play / pause / seek`
+- 房间级字幕切换同步
+- 参与者在线状态与重连恢复
+- Tauri 桌面端主机控制面板
+- 一键启动主机流程
+- 桌面端安装包构建
+
+当前未实现：
+
+- WebRTC 音视频通话
+
+## 项目结构
+
+```text
+apps/
+  desktop/   Tauri 桌面端主机控制台
+  server/    Fastify + Socket.IO + SQLite + FFmpeg 服务端
+  web/       浏览器端播放与房间页面
+packages/
+  shared-types/
+  shared-schemas/
+  shared-utils/
+storage/
+  media/     上传的原始视频
+  hls/       生成的 HLS 清单与分片
+  subtitles/ 转换后的字幕文件
+  db/        SQLite 数据库
+  temp/      临时处理目录
+infra/
+  docker-compose.yml
+  scripts/   启动、停止、打包、ngrok 辅助脚本
+```
+
+## 运行依赖
+
+在主机电脑上需要准备：
+
+- Node.js 22+
+- npm 11+
+- `ffmpeg`
+- `ffprobe`
+- Rust / Tauri Windows 构建环境
+  - 开发桌面端或打包桌面安装包时需要
+- Docker Desktop
+  - 仅当 `USE_DOCKER=true` 时需要
+- ngrok
+  - 仅当你需要把本机服务暴露到公网时需要
+
+## 环境变量
+
+推荐从 `.env.example` 开始。
+
+核心变量如下：
+
+- `USE_DOCKER`
+  - 控制主机启动脚本是否使用 Docker 启动 server
+  - 默认 `false`
+- `PORT`
+  - 本地 server 监听端口
+  - 默认 `3000`
+- `API_BASE_URL`
+  - 桌面端和辅助脚本使用的 API 地址
+  - 默认 `http://localhost:3000`
+- `PUBLIC_BASE_URL`
+  - 生成分享链接时使用的公开地址
+  - 本地使用时通常与 `API_BASE_URL` 相同
+- `WEB_URL`
+  - 房间链接使用的前端地址
+  - 本地生产模式下通常是 `http://localhost:3000`
+  - 开发模式下通常是 `http://localhost:5173`
+- `LAN_IP`
+  - 桌面端生成局域网房间链接时使用的固定 IPv4
+  - 请把它设置成你明确要暴露的地址，比如 ZeroTier IPv4
+  - 不使用自动探测
+- `FFMPEG_PATH`
+  - `ffmpeg` 可执行文件路径
+- `FFPROBE_PATH`
+  - `ffprobe` 可执行文件路径
+
+当前 `.env.example` 的默认思路是：
+
+- 开发模式前端地址：`http://localhost:5173`
+- 生产式本机 host 流程地址：`http://localhost:3000`
+- Docker 默认关闭
+- 局域网 URL 只使用固定配置的 `LAN_IP`
+
+## 安装依赖
+
+在仓库根目录执行：
+
+```bash
+npm install
+```
+
+## 推荐使用方式
+
+### 1. 启动主机流程
+
+```bash
+npm run host:start
+```
+
+这个命令会：
+
+- 构建 `web` 生产产物
+- 构建 `server` 生产产物
+- 启动本机生产模式 server
+- 打开 Tauri 桌面端主机控制面板
+
+默认行为：
+
+- 不使用 Docker
+- 分享链接默认指向 `http://localhost:3000`
+- 局域网房间链接只从 `LAN_IP` 生成
+
+停止主机流程：
+
+```bash
+npm run host:stop
+```
+
+这个命令会停止由 `host:start` 拉起的后台本地 server 进程树。
+
+如果你只想启动本机 server，不打开桌面端：
+
+```bash
+npm run host:start -- -SkipDesktop
+```
+
+### 2. 使用桌面端主机控制台
+
+桌面端里的推荐流程：
+
+1. 选择本地视频文件，或者从已有媒体库中复用视频
+2. 等待处理完成
+3. 可选地上传字幕文件
+4. 选择房间默认字幕
+5. 设置主机昵称与房间过期时间
+6. 创建房间
+7. 复制分享链接并发送给另一位观看者
+
+桌面端还提供：
+
+- 视频处理状态
+- 媒体元数据
+- 房间状态
+- 参与者在线状态
+- 字幕更新
+- 房间关闭
+- 无用媒体删除
+- 本机 URL 和局域网 URL 复制
+
+如果你希望桌面端生成局域网 URL，请把 `LAN_IP` 设置成你想使用的准确 IPv4，例如你的 ZeroTier IPv4。应用不会自动探测局域网 IP。
+
+### 3. 观看者如何使用
+
+观看者不需要桌面端。
+
+只需要：
+
+1. 用浏览器打开房间链接
+2. 输入显示名称
+3. 加入房间
+4. 观看同步播放的视频
+
+## Docker 是可选项
+
+如果你想让 `host:start` 通过 Docker 运行 server，请设置：
+
+```bash
+USE_DOCKER=true
+```
+
+然后仍然执行同一个命令：
+
+```bash
+npm run host:start
+```
+
+此时脚本会：
+
+- 使用 `infra/docker-compose.yml`
+- 在容器中运行 server
+- 挂载本地 `storage/*` 目录
+- 保持桌面端仍在宿主机运行
+
+当 `USE_DOCKER=false` 时：
+
+- `host:start` 不会调用 Docker
+- `host:stop` 也不会触碰 Docker
+
+## 本地开发模式
+
+如果你想分别调试 web、server、desktop：
+
+```bash
+npm run dev:server
+npm run dev:web
+npm run dev:desktop
+```
+
+默认开发地址：
+
+- API: `http://localhost:3000`
+- Web: `http://localhost:5173`
+- Desktop dev shell: `npm run dev:desktop`
+
+## 桌面端打包
+
+如果你要构建桌面端安装包：
+
+```bash
+npm run desktop:package
+```
+
+当前会生成：
+
+- MSI
+- NSIS 安装程序
+
+打包输出目录：
+
+- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoShare/apps/desktop/src-tauri/target/release/bundle)
+
+## ngrok 使用方式
+
+如果你想通过 ngrok 暴露本机服务：
+
+1. 先启动主机流程
+2. 确保 ngrok 已正确配置
+3. 运行：
+
+```bash
+npm run host:ngrok
+```
+
+如果你使用固定保留域名，建议在启动前先设置：
+
+- `PUBLIC_BASE_URL`
+- `WEB_URL`
+
+这样生成的房间链接会直接指向公网 HTTPS 域名。
+
+## 常用命令
+
+- `npm run host:start`
+  - 构建 `web` 和 `server` 的生产产物，启动本地主机 server，并打开 Tauri 桌面端控制面板
+- `npm run host:stop`
+  - 停止由 `host:start` 拉起的后台 server 进程树
+- `npm run host:start -- -SkipDesktop`
+  - 只启动本地主机 server，不打开桌面端
+- `npm run host:ngrok`
+  - 在 server 已启动后，通过 ngrok 暴露本地主机流程
+- `npm run desktop:package`
+  - 构建 Tauri 桌面端安装包
+- `npm run dev:server`
+  - 以开发 watch 模式运行 Fastify server
+- `npm run dev:web`
+  - 以开发模式运行 Vite web 应用
+- `npm run dev:desktop`
+  - 以开发模式运行 Tauri 桌面端
+- `npm run build:host`
+  - 构建 `apps/web` 和 `apps/server` 的生产产物
+- `npm run lint`
+  - 对所有定义了 lint 脚本的 workspace 执行 ESLint
+- `npm run typecheck`
+  - 对所有 workspace 执行 TypeScript 类型检查，并且不产出构建文件
+
+## 路由与接口
+
+健康检查：
+
+- `GET /health`
+- `GET /api/system/status`
+
+房间接口：
+
+- `POST /api/rooms`
+- `GET /api/rooms/:token`
+- `POST /api/rooms/:token/join`
+- `POST /api/rooms/:token/subtitle`
+- `POST /api/rooms/:token/close`
+
+媒体接口：
+
+- `GET /api/media`
+- `POST /api/media/import`
+- `GET /api/media/:id`
+- `DELETE /api/media/:id`
+- `POST /api/media/:id/process`
+- `POST /api/media/:id/subtitles`
+- `GET /api/media/:id/subtitles`
+
+静态播放资源：
+
+- `GET /media/:mediaId/*`
+- `GET /subtitles/:subtitleId.vtt`
+- `GET /`
+- `GET /room/:token`
+
+## 当前限制
+
+- WebRTC 音视频通话尚未实现
+- 当前产品形态主要优化的是“主机使用桌面端，观看者使用浏览器”
+- 如果你使用动态公网地址，仍需要正确设置 `PUBLIC_BASE_URL` 和 `WEB_URL`
+
+## 补充说明
+
+- SQLite 当前使用 Node 22 自带的 `node:sqlite`
+- 浏览器播放使用打包后的 `hls.js`
+- 生产模式下，server 会直接托管 `apps/web/dist`
+- 局域网 URL 只会从配置的 `LAN_IP` 生成
+- 删除媒体时会校验该媒体是否仍被活跃房间占用
+

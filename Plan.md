@@ -839,6 +839,28 @@ STUN_SERVERS=stun:stun.l.google.com:19302
 - reproducible local deployment
 - straightforward host startup process
 
+### Progress Notes
+- status: completed
+- completed:
+  - server now serves the production `apps/web/dist` build directly, including SPA routes such as `/room/:token`
+  - one-command host scripts were added for production-like local startup, stop, ngrok exposure, and desktop packaging
+  - host startup now defaults to a local server process, while Docker is controlled by the `USE_DOCKER` flag instead of being touched by default
+  - Docker image and compose flow were updated so the optional containerized server also includes the production web bundle
+  - desktop runtime defaults now align with the production local host URL and LAN URLs are derived dynamically
+  - web and desktop UI copy no longer shows Phase labels and now describes product capabilities directly
+  - Tauri bundle configuration was completed and desktop installers are produced successfully
+- verified:
+  - `npm run build:host` passes
+  - `npm run lint --workspace @videoshare/server` passes
+  - `npm run lint --workspace @videoshare/web` passes
+  - `npm run lint --workspace @videoshare/desktop` passes
+  - `cargo check` passes
+  - `npm run desktop:package` produces both MSI and NSIS installers
+  - `powershell -ExecutionPolicy Bypass -File infra/scripts/start-host.ps1 -SkipBuild -SkipDesktop` starts the local production server and `/health` returns `200`
+  - `powershell -ExecutionPolicy Bypass -File infra/scripts/stop-host.ps1` stops the local server cleanly
+- acceptance completed on 2026-03-17:
+  - Phase 9 deliverables are considered done
+
 ---
 
 ## 17. Task Breakdown by Layer
@@ -953,6 +975,8 @@ The MVP is complete when all of the following are true:
 - implement browser-first remote experience even though host uses Tauri
 - design code so remote desktop app can be added later without major backend changes
 - only the server backend runs on Docker, the application itself may run on the local computer. 
+
+
 
 
 

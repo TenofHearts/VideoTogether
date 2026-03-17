@@ -1,4 +1,5 @@
-import { resolve } from 'node:path';
+import { existsSync, statSync } from 'node:fs';
+import { extname, resolve } from 'node:path';
 
 import type { FastifyInstance } from 'fastify';
 
@@ -61,4 +62,74 @@ export async function registerStaticRoutes(
 
     return streamFile(reply, filePath);
   });
+
+  const webIndexPath = resolve(dependencies.env.web.distDir, 'index.html');
+
+  if (!existsSync(webIndexPath)) {
+    app.log.info(
+      { webDistDir: dependencies.env.web.distDir },
+      'Production web assets not found; frontend fallback disabled'
+    );
+    return;
+  }
+
+  const reservedPrefixes = [
+    '/api',
+    '/media',
+    '/subtitles',
+    '/health',
+    dependencies.env.realtime.path
+  ];
+
+  app.log.info(
+    { webDistDir: dependencies.env.web.distDir },
+    'Production web assets enabled'
+  );
+
+  app.get('/', async (_request, reply) => streamFile(reply, webIndexPath));
+
+  app.get<{
+    Params: {
+      '*': string;
+    };
+  }>('/*', async (request, reply) => {
+    const pathname = new URL(request.url, 'http://localhost').pathname;
+    const normalizedPath =
+      pathname.endsWith('/') && pathname.length > 1
+        ? pathname.slice(0, -1)
+        : pathname;
+
+    if (
+      reservedPrefixes.some(
+        (prefix) =>
+          normalizedPath === prefix || normalizedPath.startsWith(`${prefix}/`)
+      )
+    ) {
+      return reply.status(404).send({
+        message: 'Route not found'
+      });
+    }
+
+    const assetPath = normalizedPath.replace(/^\/+/, '');
+
+    if (assetPath.length > 0) {
+      const filePath = resolveSafeChildPath(
+        dependencies.env.web.distDir,
+        assetPath
+      );
+
+      if (filePath && existsSync(filePath) && statSync(filePath).isFile()) {
+        return streamFile(reply, filePath);
+      }
+
+      if (extname(assetPath).length > 0) {
+        return reply.status(404).send({
+          message: 'Asset not found'
+        });
+      }
+    }
+
+    return streamFile(reply, webIndexPath);
+  });
 }
+

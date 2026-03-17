@@ -40,7 +40,7 @@ const showDebugUrls = ['1', 'true', 'yes', 'on'].includes(
 
 const fallbackStatus: DesktopStatus = {
   apiBaseUrl: 'http://localhost:3000',
-  webUrl: 'http://localhost:5173',
+  webUrl: 'http://localhost:3000',
   lanApiBaseUrl: null,
   lanWebUrl: null,
   tauri: 'ready'
@@ -1115,12 +1115,12 @@ export default function App() {
       <section className="panel">
         <header className="hero">
           <div className="heroCopy">
-            <p className="eyebrow">Phase 6 Host Dashboard</p>
-            <h1>Manage the full host workflow from Tauri.</h1>
+            <p className="eyebrow">VideoShare host dashboard</p>
+            <h1>Run the full host workflow from one desktop control panel.</h1>
             <p className="copy">
-              Import or reuse a movie, watch the HLS pipeline state, configure
-              subtitles, create a secret room, and monitor viewer presence
-              without manual API calls.
+              Import or reuse a movie, process it to HLS, manage subtitles,
+              create private room links, and monitor viewer presence without
+              leaving the desktop app.
             </p>
             <div className="heroActions">
               {room?.shareUrl && (
@@ -2004,3 +2004,5 @@ export default function App() {
     </main>
   );
 }
+
+
