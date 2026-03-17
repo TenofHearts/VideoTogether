@@ -41,6 +41,7 @@ const showDebugUrls = ['1', 'true', 'yes', 'on'].includes(
 const fallbackStatus: DesktopStatus = {
   apiBaseUrl: 'http://localhost:3000',
   webUrl: 'http://localhost:3000',
+  publicWebUrl: null,
   lanApiBaseUrl: null,
   lanWebUrl: null,
   tauri: 'ready'
@@ -291,10 +292,21 @@ export default function App() {
   const hasActiveRoom = room?.room.status === 'active';
   const roomPlayerUrl =
     room && status ? buildRoomPlayerUrl(status.webUrl, room.room.token) : null;
+  const publicRoomPlayerUrl =
+    room && status?.publicWebUrl
+      ? buildRoomPlayerUrl(status.publicWebUrl, room.room.token)
+      : null;
   const lanRoomPlayerUrl =
     room && status?.lanWebUrl
       ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
       : null;
+  const secondaryRoomPlayerUrl = publicRoomPlayerUrl ?? lanRoomPlayerUrl;
+  const secondaryRoomLabel = publicRoomPlayerUrl
+    ? 'NGROK room URL'
+    : 'LAN room URL';
+  const secondaryRoomCopyLabel = publicRoomPlayerUrl
+    ? 'Copy ngrok URL'
+    : 'Copy LAN URL';
   const hostParticipant =
     room?.participants.find(
       (participant) => participant.id === room.room.hostClientId
@@ -303,6 +315,15 @@ export default function App() {
     room && status && hostParticipant
       ? buildParticipantRoomUrl(
           status.webUrl,
+          room.room.token,
+          hostParticipant.id,
+          hostParticipant.displayName
+        )
+      : null;
+  const publicHostRoomPlayerUrl =
+    room && status?.publicWebUrl && hostParticipant
+      ? buildParticipantRoomUrl(
+          status.publicWebUrl,
           room.room.token,
           hostParticipant.id,
           hostParticipant.displayName
@@ -317,12 +338,31 @@ export default function App() {
           hostParticipant.displayName
         )
       : null;
+  const secondaryHostRoomPlayerUrl =
+    publicHostRoomPlayerUrl ?? lanHostRoomPlayerUrl;
+  const secondaryHostRoomLabel = publicHostRoomPlayerUrl
+    ? 'NGROK host room URL'
+    : 'LAN host room URL';
+  const secondaryHostRoomCopyLabel = publicHostRoomPlayerUrl
+    ? 'Copy ngrok host URL'
+    : 'Copy LAN host URL';
   const playerUrl =
     media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
+  const publicPlayerUrl =
+    media && status?.publicWebUrl
+      ? buildPlayerUrl(status.publicWebUrl, media.id)
+      : null;
   const lanPlayerUrl =
     media && status?.lanWebUrl
       ? buildPlayerUrl(status.lanWebUrl, media.id)
       : null;
+  const secondaryPlayerUrl = publicPlayerUrl ?? lanPlayerUrl;
+  const secondaryPlayerLabel = publicPlayerUrl
+    ? 'NGROK player preview'
+    : 'LAN player preview';
+  const secondaryPlayerCopyLabel = publicPlayerUrl
+    ? 'Copy ngrok player URL'
+    : 'Copy LAN player URL';
   const selectedSubtitle =
     subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ??
     null;
@@ -1179,6 +1219,12 @@ export default function App() {
                     <span className="statusLabel">Web</span>
                     <strong>{status.webUrl}</strong>
                   </div>
+                  {status.publicWebUrl && (
+                    <div className="statusCard">
+                      <span className="statusLabel">Public web</span>
+                      <strong>{status.publicWebUrl}</strong>
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -1744,16 +1790,16 @@ export default function App() {
                     </div>
                   )}
 
-                  {lanRoomPlayerUrl && (
+                  {secondaryRoomPlayerUrl && (
                     <div className="shareCard">
-                      <span className="shareLabel">LAN room URL</span>
-                      <p className="shareValue">{lanRoomPlayerUrl}</p>
+                      <span className="shareLabel">{secondaryRoomLabel}</span>
+                      <p className="shareValue">{secondaryRoomPlayerUrl}</p>
                       <button
                         className="ghostButton"
-                        onClick={() => void copyText(lanRoomPlayerUrl)}
+                        onClick={() => void copyText(secondaryRoomPlayerUrl)}
                         type="button"
                       >
-                        Copy LAN URL
+                        {secondaryRoomCopyLabel}
                       </button>
                     </div>
                   )}
@@ -1772,16 +1818,18 @@ export default function App() {
                     </div>
                   )}
 
-                  {lanHostRoomPlayerUrl && (
+                  {secondaryHostRoomPlayerUrl && (
                     <div className="shareCard">
-                      <span className="shareLabel">LAN host room URL</span>
-                      <p className="shareValue">{lanHostRoomPlayerUrl}</p>
+                      <span className="shareLabel">
+                        {secondaryHostRoomLabel}
+                      </span>
+                      <p className="shareValue">{secondaryHostRoomPlayerUrl}</p>
                       <button
                         className="ghostButton"
-                        onClick={() => void copyText(lanHostRoomPlayerUrl)}
+                        onClick={() => void copyText(secondaryHostRoomPlayerUrl)}
                         type="button"
                       >
-                        Copy LAN host URL
+                        {secondaryHostRoomCopyLabel}
                       </button>
                     </div>
                   )}
@@ -1804,16 +1852,18 @@ export default function App() {
                         </div>
                       )}
 
-                      {lanPlayerUrl && (
+                      {secondaryPlayerUrl && (
                         <div className="shareCard">
-                          <span className="shareLabel">LAN player preview</span>
-                          <p className="shareValue">{lanPlayerUrl}</p>
+                          <span className="shareLabel">
+                            {secondaryPlayerLabel}
+                          </span>
+                          <p className="shareValue">{secondaryPlayerUrl}</p>
                           <button
                             className="ghostButton"
-                            onClick={() => void copyText(lanPlayerUrl)}
+                            onClick={() => void copyText(secondaryPlayerUrl)}
                             type="button"
                           >
-                            Copy LAN player URL
+                            {secondaryPlayerCopyLabel}
                           </button>
                         </div>
                       )}
@@ -2004,5 +2054,9 @@ export default function App() {
     </main>
   );
 }
+
+
+
+
 
 

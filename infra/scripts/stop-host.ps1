@@ -4,6 +4,9 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $tempDirectory = Join-Path $repoRoot '.codex-tmp'
 $serverPidPath = Join-Path $tempDirectory 'host-server.pid'
 $serverScriptPath = Join-Path $tempDirectory 'run-local-server.ps1'
+$ngrokPidPath = Join-Path $tempDirectory 'host-ngrok.pid'
+$ngrokLogPath = Join-Path $tempDirectory 'host-ngrok.log'
+$ngrokScriptPath = Join-Path $tempDirectory 'run-ngrok.ps1'
 $composeEnvPath = Join-Path $tempDirectory 'host-compose.env'
 
 function Get-EnvMap([string]$Path) {
@@ -87,7 +90,29 @@ if (Test-Path $serverPidPath) {
   Remove-Item $serverPidPath -Force -ErrorAction SilentlyContinue
 }
 
+if (Test-Path $ngrokPidPath) {
+  $ngrokPid = (Get-Content $ngrokPidPath | Select-Object -First 1).Trim()
+
+  if ($ngrokPid) {
+    try {
+      Get-Process -Id ([int]$ngrokPid) -ErrorAction Stop | Out-Null
+
+      if (Stop-ProcessTree -ProcessId ([int]$ngrokPid)) {
+        Write-Host "Stopped ngrok process tree $ngrokPid."
+      } else {
+        Write-Host "ngrok process tree $ngrokPid was not running."
+      }
+    } catch {
+      Write-Host "ngrok process $ngrokPid was not running."
+    }
+  }
+
+  Remove-Item $ngrokPidPath -Force -ErrorAction SilentlyContinue
+}
+
 Remove-Item $serverScriptPath -Force -ErrorAction SilentlyContinue
+Remove-Item $ngrokScriptPath -Force -ErrorAction SilentlyContinue
+Remove-Item $ngrokLogPath -Force -ErrorAction SilentlyContinue
 
 if (-not $useDocker) {
   Remove-Item $composeEnvPath -Force -ErrorAction SilentlyContinue

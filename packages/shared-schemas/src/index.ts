@@ -203,8 +203,11 @@ export const systemStatusSchema = z.object({
 export const desktopStatusSchema = z.object({
   apiBaseUrl: z.string().url(),
   webUrl: z.string().url(),
+  publicWebUrl: z.string().url().nullable(),
   lanApiBaseUrl: z.string().url().nullable(),
   lanWebUrl: z.string().url().nullable(),
   tauri: z.literal('ready')
 });
+
+
 

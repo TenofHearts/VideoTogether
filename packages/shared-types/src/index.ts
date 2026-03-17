@@ -203,8 +203,10 @@ export type SystemStatus = {
 export type DesktopStatus = {
   apiBaseUrl: string;
   webUrl: string;
+  publicWebUrl: string | null;
   lanApiBaseUrl: string | null;
   lanWebUrl: string | null;
   tauri: 'ready';
 };
+
 

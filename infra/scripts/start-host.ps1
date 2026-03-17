@@ -10,6 +10,9 @@ $tempDirectory = Join-Path $repoRoot '.codex-tmp'
 $serverPidPath = Join-Path $tempDirectory 'host-server.pid'
 $serverLogPath = Join-Path $tempDirectory 'host-server.log'
 $serverScriptPath = Join-Path $tempDirectory 'run-local-server.ps1'
+$ngrokPidPath = Join-Path $tempDirectory 'host-ngrok.pid'
+$ngrokLogPath = Join-Path $tempDirectory 'host-ngrok.log'
+$ngrokScriptPath = Join-Path $tempDirectory 'run-ngrok.ps1'
 $composeEnvPath = Join-Path $tempDirectory 'host-compose.env'
 
 New-Item -ItemType Directory -Force -Path $tempDirectory | Out-Null
@@ -71,6 +74,34 @@ function Stop-ProcessTree([int]$ProcessId) {
   Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
 }
 
+function Stop-TrackedProcess([string]$PidPath, [string]$Label) {
+  if (-not (Test-Path $PidPath)) {
+    return
+  }
+
+  $trackedPid = (Get-Content $PidPath | Select-Object -First 1).Trim()
+
+  if ($trackedPid) {
+    try {
+      Get-Process -Id ([int]$trackedPid) -ErrorAction Stop | Out-Null
+      Stop-ProcessTree -ProcessId ([int]$trackedPid)
+      Write-Host "Stopped $Label process tree $trackedPid."
+    } catch {
+      Write-Host "$Label process $trackedPid was not running."
+    }
+  }
+
+  Remove-Item $PidPath -Force -ErrorAction SilentlyContinue
+}
+
+function Get-ShellExecutable() {
+  if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+    return 'pwsh'
+  }
+
+  return 'powershell'
+}
+
 function Wait-ForServer([string]$Url, [int]$TimeoutSeconds, [int]$ProcessId) {
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 
@@ -97,6 +128,46 @@ function Wait-ForServer([string]$Url, [int]$TimeoutSeconds, [int]$ProcessId) {
   return $false
 }
 
+function Wait-ForNgrokPublicUrl([int]$TimeoutSeconds, [int]$ProcessId) {
+  $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 500
+
+    try {
+      Get-Process -Id $ProcessId -ErrorAction Stop | Out-Null
+    } catch {
+      return $null
+    }
+
+    try {
+      $response = Invoke-WebRequest -Uri 'http://127.0.0.1:4040/api/tunnels' -UseBasicParsing -TimeoutSec 2
+      $payload = $response.Content | ConvertFrom-Json
+      $publicUrls = @(
+        $payload.tunnels |
+          ForEach-Object { $_.public_url } |
+          Where-Object { $_ }
+      )
+
+      $httpsUrl = $publicUrls | Where-Object { $_ -like 'https://*' } | Select-Object -First 1
+
+      if ($httpsUrl) {
+        return $httpsUrl
+      }
+
+      $firstUrl = $publicUrls | Select-Object -First 1
+
+      if ($firstUrl) {
+        return $firstUrl
+      }
+    } catch {
+      # Keep polling until ngrok exposes a tunnel or the process exits.
+    }
+  }
+
+  return $null
+}
+
 $envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
   Join-Path $repoRoot '.env'
 } else {
@@ -105,14 +176,65 @@ $envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
 
 $envMap = Get-EnvMap $envPath
 $useDocker = Test-EnvFlag (Get-EnvValue $envMap 'USE_DOCKER' 'false')
+$serverPort = Get-EnvValue $envMap 'PORT' '3000'
 $apiBaseUrl = Get-EnvValue $envMap 'API_BASE_URL' 'http://localhost:3000'
+$ngrokEnabled = Test-EnvFlag (Get-EnvValue $envMap 'NGROK_ENABLED' 'false')
 $publicBaseUrl = Get-EnvValue $envMap 'PUBLIC_BASE_URL' $apiBaseUrl
 $rawWebUrl = Get-EnvValue $envMap 'WEB_URL' $publicBaseUrl
+$ngrokPublicUrl = $null
 $serverHealthUrl = if ($apiBaseUrl.EndsWith('/')) {
   "${apiBaseUrl}health"
 } else {
   "${apiBaseUrl}/health"
 }
+
+if ($ngrokEnabled) {
+  if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
+    throw 'ngrok is not installed or not on PATH.'
+  }
+
+  Stop-TrackedProcess -PidPath $ngrokPidPath -Label 'ngrok'
+
+  if (Test-Path $ngrokLogPath) {
+    Remove-Item $ngrokLogPath -Force -ErrorAction SilentlyContinue
+  }
+
+  $escapedRepoRoot = $repoRoot.Replace("'", "''")
+  $escapedNgrokLogPath = $ngrokLogPath.Replace("'", "''")
+  $scriptLines = @(
+    "$ErrorActionPreference = 'Stop'",
+    "Set-Location '$escapedRepoRoot'",
+    "ngrok http `"http://localhost:$serverPort`" *>&1 | Tee-Object -FilePath '$escapedNgrokLogPath' -Append"
+  )
+  $scriptLines | Set-Content $ngrokScriptPath
+
+  $shellExecutable = Get-ShellExecutable
+  Write-Host 'Starting ngrok tunnel with a dynamic public URL ...'
+  $ngrokProcess = Start-Process $shellExecutable `
+    -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $ngrokScriptPath) `
+    -WorkingDirectory $repoRoot `
+    -WindowStyle Hidden `
+    -PassThru
+  $ngrokProcess.Id | Set-Content $ngrokPidPath
+
+  $ngrokPublicUrl = Wait-ForNgrokPublicUrl -TimeoutSeconds 15 -ProcessId $ngrokProcess.Id
+
+  if (-not $ngrokPublicUrl) {
+    Remove-Item $ngrokPidPath -Force -ErrorAction SilentlyContinue
+    $ngrokLogTail = if (Test-Path $ngrokLogPath) {
+      (Get-Content $ngrokLogPath | Select-Object -Last 20) -join [Environment]::NewLine
+    } else {
+      'No ngrok log output was captured.'
+    }
+    throw "ngrok failed to expose a public URL.`n$ngrokLogTail"
+  }
+
+  $publicBaseUrl = $ngrokPublicUrl
+  $rawWebUrl = $ngrokPublicUrl
+} else {
+  Stop-TrackedProcess -PidPath $ngrokPidPath -Label 'ngrok'
+}
+
 $webUrl = if ($rawWebUrl -match '^https?://(localhost|127\.0\.0\.1):(5173|5174)/?$') {
   $publicBaseUrl
 } else {
@@ -122,7 +244,7 @@ $webUrl = if ($rawWebUrl -match '^https?://(localhost|127\.0\.0\.1):(5173|5174)/
 $runtimeEnv = [ordered]@{
   NODE_ENV = 'production'
   HOST = Get-EnvValue $envMap 'HOST' '0.0.0.0'
-  PORT = Get-EnvValue $envMap 'PORT' '3000'
+  PORT = $serverPort
   API_BASE_URL = $apiBaseUrl
   PUBLIC_BASE_URL = $publicBaseUrl
   WEB_URL = $webUrl
@@ -212,11 +334,7 @@ if ($useDocker) {
       Remove-Item $serverLogPath -Force
     }
 
-    $shellExecutable = if (Get-Command pwsh -ErrorAction SilentlyContinue) {
-      'pwsh'
-    } else {
-      'powershell'
-    }
+    $shellExecutable = Get-ShellExecutable
 
     Write-Host 'Starting local production server on http://localhost:3000 ...'
     $serverProcess = Start-Process $shellExecutable `
@@ -241,8 +359,13 @@ Write-Host "Share URLs: $webUrl"
 if ($runtimeEnv.LAN_IP) {
   Write-Host "LAN IP: $($runtimeEnv.LAN_IP)"
 }
+if ($ngrokEnabled) {
+  Write-Host "ngrok: $ngrokPublicUrl"
+} else {
+  Write-Host 'ngrok: disabled'
+}
 Write-Host "Docker mode: $useDocker"
-Write-Host "Stop command: npm run host:stop"
+Write-Host 'Stop command: npm run host:stop'
 
 if ($SkipDesktop) {
   return

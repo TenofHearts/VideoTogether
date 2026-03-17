@@ -13,6 +13,7 @@ use url::Url;
 struct DesktopStatus {
     api_base_url: String,
     web_url: String,
+    public_web_url: Option<String>,
     lan_api_base_url: Option<String>,
     lan_web_url: Option<String>,
     tauri: &'static str,
@@ -22,7 +23,7 @@ fn get_api_base_url() -> String {
     std::env::var("API_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".into())
 }
 
-fn get_web_url() -> String {
+fn get_configured_web_url() -> String {
     std::env::var("WEB_URL")
         .or_else(|_| std::env::var("PUBLIC_BASE_URL"))
         .unwrap_or_else(|_| "http://localhost:3000".into())
@@ -35,6 +36,10 @@ fn get_lan_ip() -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]")
+}
+
 fn rewrite_url_host(url: &str, host: &str) -> Option<String> {
     let mut parsed = Url::parse(url).ok()?;
 
@@ -43,6 +48,42 @@ fn rewrite_url_host(url: &str, host: &str) -> Option<String> {
     }
 
     Some(parsed.to_string())
+}
+
+fn rewrite_url_using_origin(template_url: &str, origin_url: &str) -> Option<String> {
+    let mut template = Url::parse(template_url).ok()?;
+    let origin = Url::parse(origin_url).ok()?;
+
+    if template.set_scheme(origin.scheme()).is_err() {
+        return None;
+    }
+
+    if template.set_host(origin.host_str()).is_err() {
+        return None;
+    }
+
+    if template.set_port(origin.port_or_known_default()).is_err() {
+        return None;
+    }
+
+    Some(template.to_string())
+}
+
+fn resolve_local_web_url(configured_web_url: &str, api_base_url: &str) -> String {
+    let Ok(parsed_web_url) = Url::parse(configured_web_url) else {
+        return api_base_url.to_string();
+    };
+
+    let Some(web_host) = parsed_web_url.host_str() else {
+        return api_base_url.to_string();
+    };
+
+    if is_loopback_host(web_host) {
+        return configured_web_url.to_string();
+    }
+
+    rewrite_url_using_origin(configured_web_url, api_base_url)
+        .unwrap_or_else(|| api_base_url.to_string())
 }
 
 static HOST_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -120,18 +161,25 @@ fn stop_host_server_if_running() {
 #[tauri::command]
 fn get_local_status() -> DesktopStatus {
     let api_base_url = get_api_base_url();
-    let web_url = get_web_url();
+    let configured_web_url = get_configured_web_url();
+    let local_web_url = resolve_local_web_url(&configured_web_url, &api_base_url);
     let lan_ip = get_lan_ip();
+    let public_web_url = if configured_web_url != local_web_url {
+        Some(configured_web_url.clone())
+    } else {
+        None
+    };
 
     DesktopStatus {
         api_base_url: api_base_url.clone(),
-        web_url: web_url.clone(),
+        web_url: local_web_url.clone(),
+        public_web_url,
         lan_api_base_url: lan_ip
             .as_deref()
             .and_then(|ip| rewrite_url_host(&api_base_url, ip)),
         lan_web_url: lan_ip
             .as_deref()
-            .and_then(|ip| rewrite_url_host(&web_url, ip)),
+            .and_then(|ip| rewrite_url_host(&local_web_url, ip)),
         tauri: "ready",
     }
 }

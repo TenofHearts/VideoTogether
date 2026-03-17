@@ -46,7 +46,7 @@ storage/
   temp/      temporary processing directory
 infra/
   docker-compose.yml
-  scripts/   startup, shutdown, packaging, and ngrok helper scripts
+  scripts/   startup, shutdown, and packaging scripts
 ```
 
 ## Requirements
@@ -61,8 +61,6 @@ You need these on the host machine:
   - required for desktop development or packaging
 - Docker Desktop
   - only required when `USE_DOCKER=true`
-- ngrok
-  - only required if you want to expose the local host flow to the public internet
 
 ## Environment Variables
 
@@ -240,25 +238,6 @@ Bundle output directory:
 
 - [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoTogether/apps/desktop/src-tauri/target/release/bundle)
 
-## ngrok Usage
-
-If you want to expose the local host flow through ngrok:
-
-1. Start the host flow first.
-2. Make sure your ngrok configuration is ready.
-3. Run:
-
-```bash
-npm run host:ngrok
-```
-
-If you use a reserved domain, it is better to set these variables before starting the host flow:
-
-- `PUBLIC_BASE_URL`
-- `WEB_URL`
-
-That way the generated room links will already point to the public HTTPS domain.
-
 ## Common Commands
 
 - `npm run host:start`
@@ -267,8 +246,6 @@ That way the generated room links will already point to the public HTTPS domain.
   - stops the background server process tree started by `host:start`
 - `npm run host:start -- -SkipDesktop`
   - starts the local host server only, without launching the desktop app
-- `npm run host:ngrok`
-  - exposes the local host flow through ngrok after the server is already running
 - `npm run desktop:package`
   - builds the Tauri desktop installer bundles
 - `npm run dev:server`
@@ -315,18 +292,3 @@ Static playback assets:
 - `GET /subtitles/:subtitleId.vtt`
 - `GET /`
 - `GET /room/:token`
-
-## Current Limitations
-
-- WebRTC voice/video calling is not implemented yet.
-- The current product shape is optimized for "host uses desktop app, guest uses browser".
-- If you use dynamic public URLs, you still need to set `PUBLIC_BASE_URL` and `WEB_URL` correctly.
-
-## Notes
-
-- SQLite currently uses Node 22 built-in `node:sqlite`.
-- Browser playback uses bundled `hls.js`.
-- In production mode, the server serves `apps/web/dist` directly.
-- LAN URLs are generated only from the configured `LAN_IP` value.
-- Media deletion is blocked if the media is still attached to an active room.
-

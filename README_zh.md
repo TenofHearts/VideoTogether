@@ -46,7 +46,7 @@ storage/
   temp/      临时处理目录
 infra/
   docker-compose.yml
-  scripts/   启动、停止、打包、ngrok 辅助脚本
+  scripts/   启动、停止、打包脚本
 ```
 
 ## 运行依赖
@@ -61,8 +61,6 @@ infra/
   - 开发桌面端或打包桌面安装包时需要
 - Docker Desktop
   - 仅当 `USE_DOCKER=true` 时需要
-- ngrok
-  - 仅当你需要把本机服务暴露到公网时需要
 
 ## 环境变量
 
@@ -240,25 +238,6 @@ npm run desktop:package
 
 - [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoTogether/apps/desktop/src-tauri/target/release/bundle)
 
-## ngrok 使用方式
-
-如果你想通过 ngrok 暴露本机服务：
-
-1. 先启动主机流程
-2. 确保 ngrok 已正确配置
-3. 运行：
-
-```bash
-npm run host:ngrok
-```
-
-如果你使用固定保留域名，建议在启动前先设置：
-
-- `PUBLIC_BASE_URL`
-- `WEB_URL`
-
-这样生成的房间链接会直接指向公网 HTTPS 域名。
-
 ## 常用命令
 
 - `npm run host:start`
@@ -267,8 +246,6 @@ npm run host:ngrok
   - 停止由 `host:start` 拉起的后台 server 进程树
 - `npm run host:start -- -SkipDesktop`
   - 只启动本地主机 server，不打开桌面端
-- `npm run host:ngrok`
-  - 在 server 已启动后，通过 ngrok 暴露本地主机流程
 - `npm run desktop:package`
   - 构建 Tauri 桌面端安装包
 - `npm run dev:server`
@@ -315,18 +292,4 @@ npm run host:ngrok
 - `GET /subtitles/:subtitleId.vtt`
 - `GET /`
 - `GET /room/:token`
-
-## 当前限制
-
-- WebRTC 音视频通话尚未实现
-- 当前产品形态主要优化的是“主机使用桌面端，观看者使用浏览器”
-- 如果你使用动态公网地址，仍需要正确设置 `PUBLIC_BASE_URL` 和 `WEB_URL`
-
-## 补充说明
-
-- SQLite 当前使用 Node 22 自带的 `node:sqlite`
-- 浏览器播放使用打包后的 `hls.js`
-- 生产模式下，server 会直接托管 `apps/web/dist`
-- 局域网 URL 只会从配置的 `LAN_IP` 生成
-- 删除媒体时会校验该媒体是否仍被活跃房间占用
 
