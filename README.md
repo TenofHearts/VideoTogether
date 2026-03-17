@@ -1,99 +1,198 @@
 # VideoShare
 
-Private two-person movie sharing app scaffold for the plan in `Plan.md`.
+VideoShare is a private desktop-first movie sharing app for two people. The host runs the local server and Tauri desktop app, imports a movie from disk, processes it into HLS, creates a secret room URL, and shares that URL with the second viewer.
 
-## Current status
+Current implementation status:
+- Phases 0 through 6 are complete.
+- Phase 7 (WebRTC video call) is currently deferred.
+- Shared browser playback, subtitles, room presence, and synchronized play/pause/seek are implemented.
 
-The repository now includes the completed foundations for Phase 0, Phase 1, Phase 2, Phase 3, Phase 4, and Phase 5:
+## What the app does today
 
-- npm workspace monorepo structure
-- Tauri v2 desktop host shell
-- React + Vite + Tailwind web app
-- Fastify server with SQLite-backed room persistence
-- room creation, lookup, join, and close APIs
-- Socket.IO realtime bootstrap, room presence, and playback synchronization
-- media import endpoint with binary upload support
-- ffprobe metadata extraction and FFmpeg HLS processing pipeline
-- HLS asset serving for generated manifests and segments
-- desktop host flow for selecting and uploading a local movie
-- browser preview page for monitoring processing state and playing generated HLS media
-- bundled `hls.js` playback path for offline/private Chrome and Firefox usage
-- subtitle upload pipeline for `.srt`, `.vtt`, and `.ass`
-- server-side subtitle conversion to served WebVTT output
-- browser subtitle track loading and room-backed subtitle selection
-- dedicated `/room/:token` secret room join flow with invalid/expired room handling
-- SQLite-backed participant tracking with realtime host/guest presence
-- server-authoritative room playback state with synchronized play, pause, and seek
-- periodic playback heartbeat reporting with drift detection and soft/hard resync handling
-- reconnect flow that restores canonical room playback state after the socket rejoins
-- desktop controls for subtitle upload, room subtitle updates, room expiration, and secret room creation
-- desktop reuse flow for previously uploaded media from earlier sessions
-- desktop host can delete uploaded media and clean up generated playback artifacts
-- local and LAN playback URLs for host-machine and same-network access during development
-- shared packages for types, schemas, and utilities
-- Dockerfile and Docker Compose for the server
-- storage directories for media, HLS, subtitles, DB, and temp files
+- Host imports a local movie file into the local server.
+- Server probes the file with `ffprobe` and generates HLS output with `ffmpeg`.
+- Host can upload `.srt`, `.vtt`, or `.ass` subtitles.
+- Host creates a secret room URL from the Tauri desktop dashboard.
+- Guest opens `/room/:token` in a browser.
+- Both viewers can watch the same movie and stay synchronized through server-authoritative playback state.
+- Subtitle selection is room-backed.
+- Room presence and reconnect recovery are implemented.
 
-## Verified so far
+## Repository layout
 
-- `npm run typecheck --workspace @videoshare/server`
-- `npm run lint --workspace @videoshare/server`
-- `npm run build --workspace @videoshare/server`
-- `npm run typecheck --workspace @videoshare/web`
-- `npm run lint --workspace @videoshare/web`
-- `npm run build --workspace @videoshare/web`
-- `npm run lint --workspace @videoshare/desktop`
-- `npm run typecheck --workspace @videoshare/desktop`
-- local room API flow and SQLite persistence
-- real Socket.IO client connection handshake
-- desktop host can upload a local movie file to the server
-- host-side ffprobe / FFmpeg processing can drive media into `ready` state
-- browser preview can detect processed media and attempt HLS playback
-- browser playback no longer depends on a runtime CDN fetch for `hls.js`
-- subtitle upload, conversion, and playback flow works locally
-- room subtitle updates propagate through room-backed browser playback
-- room playback play/pause/seek synchronization now flows through the authoritative server state
-- playback drift reporting can trigger client resync updates during shared playback
-- desktop host can select previously uploaded media and continue adding subtitles
-- Docker Compose build and container startup for `app-server`
+```text
+apps/
+  desktop/   Tauri host dashboard
+  server/    Fastify + Socket.IO + SQLite + FFmpeg orchestration
+  web/       Browser room UI
+packages/
+  shared-types/
+  shared-schemas/
+  shared-utils/
+storage/
+  media/     uploaded source files
+  hls/       generated playlists and segments
+  subtitles/ converted and served subtitle files
+  db/        SQLite database
+  temp/      temporary processing files
+```
 
-## Before first run
+## Prerequisites
 
-You need to install project dependencies yourself:
+You need these installed on the host machine:
+- Node.js 22+
+- npm 11+
+- `ffmpeg`
+- `ffprobe`
+- Tauri Windows prerequisites if you want to run the desktop shell in dev mode
+- Docker Desktop if you want to use the containerized server flow
 
-- `npm install`
-- `ffmpeg` and `ffprobe`
-- Tauri system prerequisites for Windows if not already installed
-- set `WEB_URL` consistently for `web`, `desktop`, and `server` if you do not want to use the default `http://localhost:5173`
+## Environment
 
-## Common commands
+Start from `.env.example`.
+
+Important variables:
+- `PORT`
+- `PUBLIC_BASE_URL`
+- `WEB_URL`
+- `ROOM_TOKEN_BYTES`
+- `HLS_OUTPUT_DIR`
+- `MEDIA_INPUT_DIR`
+- `SUBTITLE_DIR`
+- `TEMP_DIR`
+- `FFMPEG_PATH`
+- `FFPROBE_PATH`
+
+Recommended local development defaults:
+- server: `http://localhost:3000`
+- web: `http://localhost:5173`
+- desktop dev shell: `npm run dev:desktop`
+
+If you want generated secret room links to point to a different frontend origin, set `WEB_URL` consistently for server and desktop.
+
+## Install dependencies
+
+```bash
+npm install
+```
+
+## Main commands
 
 ```bash
 npm run dev:server
 npm run dev:web
 npm run dev:desktop
 npm run docker:up
+npm run docker:down
+npm run typecheck
+npm run lint
 ```
 
-## Local dev flow
+## Recommended local usage
 
-1. Start the server on `http://localhost:3000`
-2. Start the web app on `http://localhost:5173`
-3. Start the desktop shell with `npm run dev:desktop`
-4. In the desktop app, either pick a local movie to upload or select a previously uploaded movie from the recent media list
-5. Wait for processing to finish if needed, then optionally upload subtitle files and create a room
-6. Share the generated secret room URL with the second viewer, or open it yourself to test the join flow
-7. Join the room from two browser sessions and use either player to test synchronized play, pause, seek, subtitle selection, and reconnect recovery
+### 1. Start the backend
 
-## Current endpoints
+For the current development flow, start the server directly:
 
+```bash
+npm run dev:server
+```
+
+You should then have:
+- API on `http://localhost:3000`
+- health endpoint on `http://localhost:3000/health`
+
+### 2. Start the web app
+
+```bash
+npm run dev:web
+```
+
+Default local frontend:
+- `http://localhost:5173`
+
+### 3. Start the desktop host dashboard
+
+```bash
+npm run dev:desktop
+```
+
+The Tauri app is the main host control surface in the current implementation.
+
+### 4. Host workflow in the desktop app
+
+Inside the desktop app:
+1. Pick a local movie file, or reuse a previously uploaded movie from the media library.
+2. Wait for processing to finish if the movie is new.
+3. Optionally upload subtitle files.
+4. Choose the initial subtitle for the room.
+5. Set host display name and room expiry.
+6. Create the room.
+7. Copy the generated room URL from the share panel.
+
+The desktop host dashboard also lets you:
+- review processing progress
+- inspect media metadata
+- close the active room
+- retry failed processing
+- delete unused media
+- monitor participant presence
+
+### 5. Guest workflow
+
+The guest does not need the desktop app.
+
+Guest flow:
+1. Open the secret room URL in a browser.
+2. Enter a display name.
+3. Join the room.
+4. Watch the movie in the browser player.
+
+### 6. Shared playback behavior
+
+Implemented today:
+- synchronized play
+- synchronized pause
+- synchronized seek
+- playback drift detection and resync
+- room-backed subtitle selection
+- reconnect recovery
+- participant presence
+
+Not implemented yet:
+- WebRTC voice/video call
+
+## Containerized server flow
+
+If you want to run the server in Docker instead of directly through Node:
+
+```bash
+npm run docker:up
+```
+
+This uses `infra/docker-compose.yml` and mounts:
+- `storage/media`
+- `storage/hls`
+- `storage/subtitles`
+- `storage/db`
+- `storage/temp`
+
+The desktop app itself is still run locally on the host machine.
+
+## Useful endpoints
+
+### Health and diagnostics
 - `GET /health`
 - `GET /api/system/status`
+
+### Rooms
 - `POST /api/rooms`
 - `GET /api/rooms/:token`
 - `POST /api/rooms/:token/join`
 - `POST /api/rooms/:token/subtitle`
 - `POST /api/rooms/:token/close`
+
+### Media
 - `GET /api/media`
 - `POST /api/media/import`
 - `GET /api/media/:id`
@@ -101,38 +200,38 @@ npm run docker:up
 - `POST /api/media/:id/process`
 - `POST /api/media/:id/subtitles`
 - `GET /api/media/:id/subtitles`
+
+### Static playback assets
 - `GET /media/:mediaId/*`
 - `GET /subtitles/:subtitleId.vtt`
 
-## Socket events
+## Useful workspace checks
 
-Client to server:
+```bash
+npm run typecheck --workspace @videoshare/server
+npm run lint --workspace @videoshare/server
+npm run build --workspace @videoshare/server
+npm run typecheck --workspace @videoshare/web
+npm run lint --workspace @videoshare/web
+npm run build --workspace @videoshare/web
+npm run typecheck --workspace @videoshare/desktop
+npm run lint --workspace @videoshare/desktop
+npm run build --workspace @videoshare/desktop
+```
 
-- `room:join`
-- `room:leave`
-- `participant:heartbeat`
-- `playback:play`
-- `playback:pause`
-- `playback:seek`
-- `playback:state-report`
+Note: on this machine, some Vite builds may fail inside the sandbox with `spawn EPERM`; rerunning outside the sandbox succeeds.
 
-Server to client:
+## Current limitations
 
-- `system:hello`
-- `system:error`
-- `room:joined`
-- `room:state`
-- `room:participant-joined`
-- `room:participant-left`
-- `playback:update`
-- `playback:resync`
+- Phase 7 WebRTC calling is deferred and not implemented.
+- Public internet exposure through ngrok is planned but not yet packaged into a one-command host flow.
+- The desktop app is currently a host dashboard, not a full remote participant client.
+- The local Tauri command surface is still minimal and focused on status discovery.
 
-## Notes
+## Practical notes
 
-- SQLite currently uses Node 22 built-in `node:sqlite`, so you may see an experimental warning at runtime.
-- The web player uses a bundled `hls.js` dependency instead of loading it from a public CDN at runtime.
-- `PUBLIC_BASE_URL` and `WEB_URL` can include a subpath such as `/videoshare/`; generated playback URLs preserve that prefix.
-- During development, the desktop app shows both local and LAN URLs; LAN URLs are intended for devices on the same network, while `PUBLIC_BASE_URL` remains the path for future ngrok/public sharing.
-- On this machine, the desktop Vite dev server works more reliably with `vite --configLoader native`.
-- The current web production build succeeds, but Vite warns that the main chunk is larger than `500 kB`; route or feature-level splitting is a reasonable follow-up before later phases add more UI.
-- If the desktop or web Vite page behaves strangely after config changes, clearing `apps/desktop/node_modules/.vite` or `apps/web/node_modules/.vite` can help.
+- SQLite currently uses Node 22 built-in `node:sqlite`.
+- The web player uses bundled `hls.js`; it does not depend on a runtime CDN fetch.
+- `PUBLIC_BASE_URL` and `WEB_URL` can include subpaths, and generated URLs preserve those prefixes.
+- During local development, the desktop app can show both local and LAN room URLs.
+- Media deletion is blocked while the media is still assigned to an active room.

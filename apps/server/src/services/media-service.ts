@@ -355,6 +355,14 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     WHERE id = ?
   `);
 
+  const countActiveRoomsByMediaStatement = database.connection.prepare(`
+    SELECT COUNT(*) AS room_count
+    FROM rooms
+    WHERE active_media_id = ?
+      AND status = 'active'
+      AND (expires_at IS NULL OR expires_at > ?)
+  `);
+
   async function probeMedia(media: Media) {
     const output = await runCommand(env.mediaProcessing.ffprobePath, [
       '-v',
@@ -659,6 +667,15 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         throw new HttpError(409, 'Cannot delete media while processing is active');
       }
 
+      const activeRoomCount = countActiveRoomsByMediaStatement.get(
+        mediaId,
+        new Date().toISOString()
+      ) as { room_count: number } | undefined;
+
+      if ((activeRoomCount?.room_count ?? 0) > 0) {
+        throw new HttpError(409, 'Cannot delete media while it is assigned to an active room');
+      }
+
       const subtitles = service.listSubtitlesByMediaId(mediaId);
 
       removePathOrThrow(media.sourcePath);
@@ -692,6 +709,8 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
 
   return service;
 }
+
+
 
 
 

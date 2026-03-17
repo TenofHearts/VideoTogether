@@ -5,17 +5,27 @@ import type {
   Media,
   MediaListResponse,
   MediaOperationResponse,
+  MediaSubtitlesResponse,
+  Participant,
   RoomLookupResponse,
   Subtitle,
   SubtitleOperationResponse
 } from '@videoshare/shared-types';
 
-type UploadState = 'idle' | 'uploading' | 'error' | 'success';
+type ActionState = 'idle' | 'working' | 'error' | 'success';
 
 type RecentMediaState =
   | { kind: 'loading'; data: Media[] }
   | { kind: 'error'; data: Media[]; message: string }
   | { kind: 'success'; data: Media[] };
+
+type StepState = 'complete' | 'active' | 'pending' | 'error';
+
+type ProcessingStep = {
+  label: string;
+  description: string;
+  state: StepState;
+};
 
 const showDebugUrls = ['1', 'true', 'yes', 'on'].includes(
   String(import.meta.env.VITE_DEBUG_URLS ?? '').toLowerCase()
@@ -44,14 +54,25 @@ function formatDuration(durationMs: number | null): string {
     .join(':');
 }
 
+function formatDateTime(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value));
+}
+
+function formatFileSize(size: number): string {
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function getStatusText(status: Media['status']): string {
   switch (status) {
     case 'pending':
-      return 'Waiting for FFmpeg pipeline';
+      return 'Queued for the HLS pipeline';
     case 'processing':
-      return 'Running ffprobe and generating HLS';
+      return 'Running ffprobe and FFmpeg';
     case 'ready':
-      return 'Ready for browser playback';
+      return 'Ready for room playback';
     case 'error':
       return 'Processing failed';
     default:
@@ -74,17 +95,124 @@ function buildRoomPlayerUrl(baseUrl: string, token: string): string {
   return url.toString();
 }
 
-function formatImportedAt(value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(value));
+function getProcessingSteps(media: Media | null): ProcessingStep[] {
+  if (!media) {
+    return [
+      {
+        label: 'Choose media',
+        description: 'Pick a movie from disk or the server library.',
+        state: 'active'
+      },
+      {
+        label: 'Process to HLS',
+        description: 'The server probes the file and generates HLS output.',
+        state: 'pending'
+      },
+      {
+        label: 'Open a room',
+        description: 'Create a secret room after the media is ready.',
+        state: 'pending'
+      }
+    ];
+  }
+
+  switch (media.status) {
+    case 'pending':
+      return [
+        {
+          label: 'Media uploaded',
+          description: 'The source file is stored on the host machine.',
+          state: 'complete'
+        },
+        {
+          label: 'Processing queued',
+          description: 'Waiting for ffprobe and FFmpeg to start.',
+          state: 'active'
+        },
+        {
+          label: 'Ready for rooms',
+          description: 'Share URLs become useful after HLS generation finishes.',
+          state: 'pending'
+        }
+      ];
+    case 'processing':
+      return [
+        {
+          label: 'Media uploaded',
+          description: 'The source file is stored on the host machine.',
+          state: 'complete'
+        },
+        {
+          label: 'HLS pipeline running',
+          description: 'The server is probing metadata and writing playlists and segments.',
+          state: 'active'
+        },
+        {
+          label: 'Ready for rooms',
+          description: 'Room creation stays enabled after processing completes.',
+          state: 'pending'
+        }
+      ];
+    case 'ready':
+      return [
+        {
+          label: 'Media uploaded',
+          description: 'The source file is available in local storage.',
+          state: 'complete'
+        },
+        {
+          label: 'HLS generated',
+          description: 'Manifest and segments are ready for browser playback.',
+          state: 'complete'
+        },
+        {
+          label: 'Ready for rooms',
+          description: 'You can create, share, and manage a room from this dashboard.',
+          state: 'complete'
+        }
+      ];
+    case 'error':
+      return [
+        {
+          label: 'Media uploaded',
+          description: 'The original file is still stored locally.',
+          state: 'complete'
+        },
+        {
+          label: 'Processing failed',
+          description: media.processingError ?? 'The HLS pipeline stopped with an error.',
+          state: 'error'
+        },
+        {
+          label: 'Ready for rooms',
+          description: 'Retry processing before creating a room.',
+          state: 'pending'
+        }
+      ];
+    default:
+      return [];
+  }
+}
+
+function getParticipantRoleLabel(participant: Participant): string {
+  return participant.role === 'host' ? 'Host' : 'Guest';
+}
+
+function getParticipantConnectionLabel(participant: Participant): string {
+  return participant.connectionState === 'connected' ? 'Connected' : 'Disconnected';
+}
+
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as
+    | { message?: string; detail?: string }
+    | null;
+
+  return payload?.message ?? payload?.detail ?? `${fallback} (${response.status})`;
 }
 
 export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
-  const deletingMediaIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSubtitleFile, setSelectedSubtitleFile] = useState<File | null>(null);
@@ -92,21 +220,109 @@ export default function App() {
   const [media, setMedia] = useState<Media | null>(null);
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [room, setRoom] = useState<RoomLookupResponse | null>(null);
-  const [recentMedia, setRecentMedia] = useState<RecentMediaState>({
-    kind: 'loading',
-    data: []
-  });
-  const [uploadState, setUploadState] = useState<UploadState>('idle');
-  const [subtitleUploadState, setSubtitleUploadState] = useState<UploadState>('idle');
-  const [roomState, setRoomState] = useState<UploadState>('idle');
-  const [roomSubtitleState, setRoomSubtitleState] = useState<UploadState>('idle');
-  const [deleteState, setDeleteState] = useState<UploadState>('idle');
+  const [recentMedia, setRecentMedia] = useState<RecentMediaState>({ kind: 'loading', data: [] });
+  const [uploadState, setUploadState] = useState<ActionState>('idle');
+  const [subtitleUploadState, setSubtitleUploadState] = useState<ActionState>('idle');
+  const [roomState, setRoomState] = useState<ActionState>('idle');
+  const [roomSubtitleState, setRoomSubtitleState] = useState<ActionState>('idle');
+  const [closeRoomState, setCloseRoomState] = useState<ActionState>('idle');
+  const [deleteState, setDeleteState] = useState<ActionState>('idle');
   const [deleteConfirmArmed, setDeleteConfirmArmed] = useState(false);
   const [processingQueued, setProcessingQueued] = useState(false);
   const [hostDisplayName, setHostDisplayName] = useState('Host');
   const [roomExpiryHours, setRoomExpiryHours] = useState('24');
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const hasActiveRoom = room?.room.status === 'active';
+  const roomPlayerUrl = room && status ? buildRoomPlayerUrl(status.webUrl, room.room.token) : null;
+  const lanRoomPlayerUrl = room && status?.lanWebUrl
+    ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
+    : null;
+  const playerUrl = media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
+  const lanPlayerUrl = media && status?.lanWebUrl
+    ? buildPlayerUrl(status.lanWebUrl, media.id)
+    : null;
+  const selectedSubtitle = subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ?? null;
+  const activeRoomSubtitle = room?.subtitles.find((subtitle) => subtitle.id === room.room.activeSubtitleId) ?? null;
+  const participants = room?.participants ?? [];
+  const guestCount = participants.filter((participant) => participant.role === 'guest').length;
+
+  async function refreshRecentMedia() {
+    if (!status) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${status.apiBaseUrl}/api/media`);
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, 'Media list failed'));
+      }
+
+      const payload = (await response.json()) as MediaListResponse;
+      setRecentMedia({ kind: 'success', data: payload.media });
+    } catch (reason) {
+      setRecentMedia((current) => ({
+        kind: 'error',
+        data: current.data,
+        message: reason instanceof Error ? reason.message : 'Failed to load recent media'
+      }));
+    }
+  }
+
+  async function fetchMediaById(mediaId: string): Promise<Media> {
+    if (!status) {
+      throw new Error('Desktop status is not ready');
+    }
+
+    const response = await fetch(`${status.apiBaseUrl}/api/media/${mediaId}`);
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response, 'Media lookup failed'));
+    }
+
+    return (await response.json()) as Media;
+  }
+
+  async function fetchSubtitles(mediaId: string): Promise<Subtitle[]> {
+    if (!status) {
+      throw new Error('Desktop status is not ready');
+    }
+
+    const response = await fetch(`${status.apiBaseUrl}/api/media/${mediaId}/subtitles`);
+
+    if (!response.ok) {
+      throw new Error(await readErrorMessage(response, 'Subtitle lookup failed'));
+    }
+
+    const payload = (await response.json()) as MediaSubtitlesResponse;
+    return payload.subtitles;
+  }
+
+  async function fetchRoom(token: string): Promise<RoomLookupResponse | null> {
+    if (!status) {
+      throw new Error('Desktop status is not ready');
+    }
+
+    const response = await fetch(`${status.apiBaseUrl}/api/rooms/${token}`);
+
+    if (!response.ok) {
+      const nextError = await readErrorMessage(response, 'Room lookup failed');
+
+      if (response.status === 404 || response.status === 410) {
+        setRoom(null);
+        setCloseRoomState('idle');
+        setRoomSubtitleState('idle');
+        setMessage(nextError);
+        return null;
+      }
+
+      throw new Error(nextError);
+    }
+
+    return (await response.json()) as RoomLookupResponse;
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -142,12 +358,12 @@ export default function App() {
     let cancelled = false;
     const apiBaseUrl = status.apiBaseUrl;
 
-    async function loadRecentMedia() {
+    async function loadRecentMediaWithGuard() {
       try {
         const response = await fetch(`${apiBaseUrl}/api/media`);
 
         if (!response.ok) {
-          throw new Error(`Media list failed with ${response.status}`);
+          throw new Error(await readErrorMessage(response, 'Media list failed'));
         }
 
         const payload = (await response.json()) as MediaListResponse;
@@ -166,9 +382,9 @@ export default function App() {
       }
     }
 
-    void loadRecentMedia();
+    void loadRecentMediaWithGuard();
     const timer = window.setInterval(() => {
-      void loadRecentMedia();
+      void loadRecentMediaWithGuard();
     }, 15000);
 
     return () => {
@@ -184,25 +400,24 @@ export default function App() {
 
     let cancelled = false;
     const timer = window.setInterval(() => {
-      void fetch(`${status.apiBaseUrl}/api/media/${media.id}`)
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`Media lookup failed with ${response.status}`);
+      void fetchMediaById(media.id)
+        .then((nextMedia) => {
+          if (cancelled) {
+            return;
           }
 
-          return (await response.json()) as Media;
-        })
-        .then((nextMedia) => {
-          if (!cancelled) {
-            setMedia(nextMedia);
-            if (nextMedia.status === 'ready') {
-              setMessage('HLS output is ready. You can open the browser preview now.');
-              setUploadState('success');
-            }
-            if (nextMedia.status === 'error') {
-              setUploadState('error');
-              setError(nextMedia.processingError ?? 'Media processing failed');
-            }
+          setMedia(nextMedia);
+
+          if (nextMedia.status === 'ready') {
+            setUploadState('success');
+            setMessage('HLS output is ready. The movie can now be used for a room.');
+            void refreshRecentMedia();
+          }
+
+          if (nextMedia.status === 'error') {
+            setUploadState('error');
+            setError(nextMedia.processingError ?? 'Media processing failed');
+            void refreshRecentMedia();
           }
         })
         .catch((reason) => {
@@ -225,39 +440,33 @@ export default function App() {
     }
 
     let cancelled = false;
-    const apiBaseUrl = status.apiBaseUrl;
-    const mediaId = media.id;
 
-    async function loadSubtitles() {
-      try {
-        const response = await fetch(`${apiBaseUrl}/api/media/${mediaId}/subtitles`);
-
-        if (!response.ok) {
-          throw new Error(`Subtitle lookup failed with ${response.status}`);
+    void fetchSubtitles(media.id)
+      .then((nextSubtitles) => {
+        if (cancelled) {
+          return;
         }
 
-        const payload = (await response.json()) as { subtitles: Subtitle[] };
-
-        if (!cancelled) {
-          setSubtitles(payload.subtitles);
-          setSelectedRoomSubtitleId((current) => current ?? payload.subtitles[0]?.id ?? null);
-        }
-      } catch (reason) {
+        setSubtitles(nextSubtitles);
+        setSelectedRoomSubtitleId((current) => current ?? nextSubtitles[0]?.id ?? null);
+      })
+      .catch((reason) => {
         if (!cancelled) {
           setError(reason instanceof Error ? reason.message : 'Failed to load subtitles');
         }
-      }
-    }
-
-    void loadSubtitles();
+      });
 
     return () => {
       cancelled = true;
     };
-  }, [status, media]);
+  }, [status, media?.id]);
 
   useEffect(() => {
-    setSelectedRoomSubtitleId(room?.room.activeSubtitleId ?? null);
+    if (!room) {
+      return;
+    }
+
+    setSelectedRoomSubtitleId(room.room.activeSubtitleId);
   }, [room]);
 
   useEffect(() => {
@@ -267,33 +476,17 @@ export default function App() {
 
     let cancelled = false;
     const timer = window.setInterval(() => {
-      void fetch(`${status.apiBaseUrl}/api/rooms/${room.room.token}`)
-        .then(async (response) => {
-          if (!response.ok) {
-            const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-            throw new Error(payload?.message ?? `Room lookup failed with ${response.status}`);
-          }
-
-          return (await response.json()) as RoomLookupResponse;
-        })
+      void fetchRoom(room.room.token)
         .then((payload) => {
-          if (!cancelled) {
-            if (deletingMediaIdRef.current && payload.room.activeMediaId === null) {
-              setRoom(null);
-              setSelectedRoomSubtitleId(null);
-              return;
-            }
-
-            setRoom(payload);
-            setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
+          if (!payload || cancelled) {
+            return;
           }
+
+          setRoom(payload);
+          setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
         })
         .catch((reason) => {
           if (!cancelled) {
-            if (deletingMediaIdRef.current && room.room.activeMediaId === deletingMediaIdRef.current) {
-              return;
-            }
-
             setError(reason instanceof Error ? reason.message : 'Failed to refresh room state');
           }
         });
@@ -308,49 +501,30 @@ export default function App() {
   useEffect(() => {
     setDeleteConfirmArmed(false);
     setDeleteState('idle');
-
-    if (media?.id) {
-      deletingMediaIdRef.current = null;
-    }
   }, [media?.id]);
 
-  const playerUrl = media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
-  const lanPlayerUrl = media && status?.lanWebUrl
-    ? buildPlayerUrl(status.lanWebUrl, media.id)
-    : null;
-  const roomPlayerUrl = room && status
-    ? buildRoomPlayerUrl(status.webUrl, room.room.token)
-    : null;
-  const lanRoomPlayerUrl = room && status?.lanWebUrl
-    ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
-    : null;
   async function selectExistingMedia(mediaId: string) {
     if (!status) {
       return;
     }
 
+    if (hasActiveRoom && room?.room.activeMediaId !== mediaId) {
+      setError('Close the active room before switching to a different movie.');
+      setMessage(null);
+      return;
+    }
+
     setError(null);
-    setMessage('Loading a previously uploaded media item from the server...');
-    setRoom(null);
-    setSubtitles([]);
-    setSelectedRoomSubtitleId(null);
-    setDeleteConfirmArmed(false);
-    setDeleteState('idle');
+    setMessage('Loading the selected media from the server library...');
 
     try {
-      const response = await fetch(`${status.apiBaseUrl}/api/media/${mediaId}`);
-
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? `Media lookup failed with ${response.status}`);
-      }
-
-      const payload = (await response.json()) as Media;
+      const payload = await fetchMediaById(mediaId);
       setMedia(payload);
       setSelectedFile(null);
       setProcessingQueued(false);
       setUploadState(payload.status === 'error' ? 'error' : 'success');
-      setMessage('Loaded an existing media item from the server. You can create a room or add more subtitles without re-uploading the video.');
+      setRoom((currentRoom) => (currentRoom?.room.activeMediaId === payload.id ? currentRoom : null));
+      setMessage('Media loaded. You can manage subtitles or open a room from this dashboard.');
     } catch (reason) {
       setUploadState('error');
       setError(reason instanceof Error ? reason.message : 'Failed to load existing media');
@@ -363,7 +537,13 @@ export default function App() {
       return;
     }
 
-    setUploadState('uploading');
+    if (hasActiveRoom) {
+      setError('Close the active room before uploading a new movie.');
+      setMessage(null);
+      return;
+    }
+
+    setUploadState('working');
     setError(null);
     setMessage('Uploading media to the local server...');
     setRoom(null);
@@ -381,21 +561,25 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { message?: string; detail?: string }
-          | null;
-        throw new Error(payload?.message ?? `Upload failed with ${response.status}`);
+        throw new Error(await readErrorMessage(response, 'Upload failed'));
       }
 
       const payload = (await response.json()) as MediaOperationResponse;
       setMedia(payload.media);
       setProcessingQueued(payload.processingQueued);
       setUploadState(payload.media.status === 'error' ? 'error' : 'success');
+      setSelectedFile(null);
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
       setMessage(
         payload.processingQueued
           ? 'Upload finished. Server-side processing has started.'
-          : 'Upload finished. Processing was already running for this media.'
+          : 'Upload finished. A processing job was already running for this media.'
       );
+      await refreshRecentMedia();
     } catch (reason) {
       setUploadState('error');
       setError(reason instanceof Error ? reason.message : 'Upload failed');
@@ -408,7 +592,7 @@ export default function App() {
       return;
     }
 
-    setSubtitleUploadState('uploading');
+    setSubtitleUploadState('working');
     setError(null);
     setMessage('Uploading subtitle and converting it to WebVTT when needed...');
 
@@ -423,21 +607,27 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { message?: string }
-          | null;
-        throw new Error(payload?.message ?? `Subtitle upload failed with ${response.status}`);
+        throw new Error(await readErrorMessage(response, 'Subtitle upload failed'));
       }
 
       const payload = (await response.json()) as SubtitleOperationResponse;
       setSubtitles((current) => {
         const next = [...current.filter((subtitle) => subtitle.id !== payload.subtitle.id), payload.subtitle];
-        next.sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.label.localeCompare(right.label));
+        next.sort(
+          (left, right) =>
+            Number(right.isDefault) - Number(left.isDefault) || left.label.localeCompare(right.label)
+        );
         return next;
       });
       setSelectedRoomSubtitleId(payload.subtitle.id);
+      setSelectedSubtitleFile(null);
       setSubtitleUploadState('success');
-      setMessage(`Subtitle ready: ${payload.subtitle.label} (${payload.subtitle.format} -> vtt)`);
+
+      if (subtitleInputRef.current) {
+        subtitleInputRef.current.value = '';
+      }
+
+      setMessage(`Subtitle ready: ${payload.subtitle.label}.`);
     } catch (reason) {
       setSubtitleUploadState('error');
       setError(reason instanceof Error ? reason.message : 'Subtitle upload failed');
@@ -449,9 +639,16 @@ export default function App() {
       return;
     }
 
-    setRoomState('uploading');
+    if (hasActiveRoom) {
+      setError('Close the current room before creating a new one.');
+      setMessage(null);
+      return;
+    }
+
+    setRoomState('working');
+    setCloseRoomState('idle');
     setError(null);
-    setMessage('Creating a shareable room for this media...');
+    setMessage('Creating a shareable room for the selected movie...');
 
     try {
       const defaultSubtitle = subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId)
@@ -465,24 +662,24 @@ export default function App() {
         },
         body: JSON.stringify({
           hostDisplayName: hostDisplayName.trim() || 'Host',
-          expiresAt: roomExpiryHours === 'never'
-            ? null
-            : new Date(Date.now() + Number(roomExpiryHours) * 60 * 60 * 1000).toISOString(),
+          expiresAt:
+            roomExpiryHours === 'never'
+              ? null
+              : new Date(Date.now() + Number(roomExpiryHours) * 60 * 60 * 1000).toISOString(),
           activeMediaId: media.id,
           activeSubtitleId: defaultSubtitle?.id ?? null
         })
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? `Room creation failed with ${response.status}`);
+        throw new Error(await readErrorMessage(response, 'Room creation failed'));
       }
 
       const payload = (await response.json()) as RoomLookupResponse;
       setRoom(payload);
       setRoomState('success');
       setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
-      setMessage('Room created. Share the secret room URL with the second viewer.');
+      setMessage('Room created. Copy the secret URL from the share panel.');
     } catch (reason) {
       setRoomState('error');
       setError(reason instanceof Error ? reason.message : 'Room creation failed');
@@ -494,7 +691,7 @@ export default function App() {
       return;
     }
 
-    setRoomSubtitleState('uploading');
+    setRoomSubtitleState('working');
     setError(null);
     setMessage('Updating the room subtitle selection...');
 
@@ -510,8 +707,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? `Subtitle update failed with ${response.status}`);
+        throw new Error(await readErrorMessage(response, 'Subtitle update failed'));
       }
 
       const payload = (await response.json()) as RoomLookupResponse;
@@ -524,12 +720,46 @@ export default function App() {
     }
   }
 
+  async function closeRoom() {
+    if (!status || !room) {
+      return;
+    }
+
+    setCloseRoomState('working');
+    setError(null);
+    setMessage('Closing the active room...');
+
+    try {
+      const response = await fetch(`${status.apiBaseUrl}/api/rooms/${room.room.token}/close`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response, 'Room close failed'));
+      }
+
+      setRoom(null);
+      setCloseRoomState('success');
+      setRoomSubtitleState('idle');
+      setMessage('Room closed. You can now switch media or open a new room.');
+    } catch (reason) {
+      setCloseRoomState('error');
+      setError(reason instanceof Error ? reason.message : 'Room close failed');
+    }
+  }
+
   async function retryProcessing() {
     if (!status || !media) {
       return;
     }
 
-    setUploadState('uploading');
+    if (hasActiveRoom) {
+      setError('Close the active room before retrying media processing.');
+      setMessage(null);
+      return;
+    }
+
+    setUploadState('working');
     setError(null);
     setMessage('Requesting a new processing attempt...');
 
@@ -539,10 +769,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as
-          | { message?: string }
-          | null;
-        throw new Error(payload?.message ?? `Retry failed with ${response.status}`);
+        throw new Error(await readErrorMessage(response, 'Retry failed'));
       }
 
       const payload = (await response.json()) as MediaOperationResponse;
@@ -554,6 +781,7 @@ export default function App() {
           ? 'Processing restarted.'
           : 'A processing job is already running for this media.'
       );
+      await refreshRecentMedia();
     } catch (reason) {
       setUploadState('error');
       setError(reason instanceof Error ? reason.message : 'Retry failed');
@@ -574,14 +802,19 @@ export default function App() {
       return;
     }
 
-    if (!deleteConfirmArmed) {
-      setDeleteConfirmArmed(true);
-      setMessage(`Click delete again to remove ${media.originalFileName}, its HLS output, and all attached subtitles.`);
+    if (hasActiveRoom && room?.room.activeMediaId === media.id) {
+      setError('Close the active room before deleting its movie.');
+      setMessage(null);
       return;
     }
 
-    deletingMediaIdRef.current = media.id;
-    setDeleteState('uploading');
+    if (!deleteConfirmArmed) {
+      setDeleteConfirmArmed(true);
+      setMessage(`Click delete again to remove ${media.originalFileName} and all generated playback files.`);
+      return;
+    }
+
+    setDeleteState('working');
     setDeleteConfirmArmed(false);
     setError(null);
     setMessage('Deleting media, subtitles, and generated playback files...');
@@ -592,14 +825,9 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => null)) as { message?: string } | null;
-        throw new Error(payload?.message ?? `Delete failed with ${response.status}`);
+        throw new Error(await readErrorMessage(response, 'Delete failed'));
       }
 
-      setRecentMedia((current) => ({
-        kind: 'success',
-        data: current.data.filter((item) => item.id !== media.id)
-      }));
       setMedia(null);
       setRoom(null);
       setSubtitles([]);
@@ -611,453 +839,624 @@ export default function App() {
       setSubtitleUploadState('idle');
       setRoomState('idle');
       setRoomSubtitleState('idle');
+      setCloseRoomState('idle');
       setDeleteState('success');
       setMessage('Media deleted successfully.');
-
-      void fetch(`${status.apiBaseUrl}/api/media`)
-        .then(async (recentResponse) => {
-          if (!recentResponse.ok) {
-            return;
-          }
-
-          const recentPayload = (await recentResponse.json()) as MediaListResponse;
-          setRecentMedia({ kind: 'success', data: recentPayload.media });
-        })
-        .catch(() => {
-          // Ignore best-effort refresh failures after a confirmed delete.
-        });
+      await refreshRecentMedia();
     } catch (reason) {
-      deletingMediaIdRef.current = null;
       setDeleteState('error');
       setError(reason instanceof Error ? reason.message : 'Delete failed');
     }
   }
+
   return (
     <main className="shell">
       <section className="panel">
-        <div className="hero">
-          <div>
-            <p className="eyebrow">Phase 4 Host Flow</p>
-            <h1>Import media, create a secret room, and track who joined from the desktop app.</h1>
+        <header className="hero">
+          <div className="heroCopy">
+            <p className="eyebrow">Phase 6 Host Dashboard</p>
+            <h1>Manage the full host workflow from Tauri.</h1>
             <p className="copy">
-              This dashboard now creates dedicated <span className="font-mono">/room/&lt;token&gt;</span> links, lets you set room expiration, and refreshes participant presence while the room is active.
+              Import or reuse a movie, watch the HLS pipeline state, configure subtitles,
+              create a secret room, and monitor viewer presence without manual API calls.
             </p>
-          </div>
-
-          {status && (
-            <dl className="statusGrid compact">
-              <div>
-                <dt>Tauri</dt>
-                <dd>{status.tauri}</dd>
-              </div>
-              {showDebugUrls && (
-                <>
-                  <div>
-                    <dt>API</dt>
-                    <dd>{status.apiBaseUrl}</dd>
-                  </div>
-                  <div>
-                    <dt>Web</dt>
-                    <dd>{status.webUrl}</dd>
-                  </div>
-                  <div>
-                    <dt>LAN API</dt>
-                    <dd>{status.lanApiBaseUrl ?? 'Unavailable'}</dd>
-                  </div>
-                  <div>
-                    <dt>LAN Web</dt>
-                    <dd>{status.lanWebUrl ?? 'Unavailable'}</dd>
-                  </div>
-                </>
+            <div className="heroActions">
+              {room?.shareUrl && (
+                <button className="primaryButton" onClick={() => void copyText(room.shareUrl)} type="button">
+                  Copy secret room URL
+                </button>
               )}
-            </dl>
-          )}
-        </div>
-
-        <section className="uploadPanel">
-          <div>
-            <p className="sectionEyebrow">Reuse media</p>
-            <h2>Create a room from previous uploads</h2>
-            <p className="sectionCopy">
-              Pick a media item that is already stored on the server. This lets you create a new room in a later session without uploading the video again.
-            </p>
-          </div>
-
-          {recentMedia.kind === 'loading' && (
-            <div className="fileSummary">
-              <p className="fileName">Loading recent media...</p>
-              <p className="fileMeta">Fetching previously uploaded videos from the server.</p>
-            </div>
-          )}
-
-          {recentMedia.kind === 'error' && (
-            <div className="fileSummary">
-              <p className="fileName">Could not load recent media</p>
-              <p className="fileMeta">{recentMedia.message}</p>
-            </div>
-          )}
-
-          {recentMedia.data.length > 0 && (
-            <div className="mediaQueue">
-              {recentMedia.data.map((item) => (
+              {room && (
                 <button
-                  className={`mediaQueueItem${media?.id === item.id ? ' selected' : ''}`}
-                  key={item.id}
+                  className="secondaryButton"
+                  disabled={closeRoomState === 'working'}
                   onClick={() => {
-                    void selectExistingMedia(item.id);
+                    void closeRoom();
                   }}
                   type="button"
                 >
-                  <div className="mediaQueueHeader">
-                    <p className="mediaQueueTitle">{item.originalFileName}</p>
-                    <span className="mediaQueueBadge">{getStatusText(item.status)}</span>
-                  </div>
-                  <p className="mediaQueueMeta">Imported {formatImportedAt(item.createdAt)}</p>
-                  <p className="mediaQueueMeta">Duration {formatDuration(item.durationMs)}</p>
+                  {closeRoomState === 'working' ? 'Closing room...' : 'Close current room'}
                 </button>
-              ))}
+              )}
+            </div>
+          </div>
+
+          {status && (
+            <div className="heroStatusGrid">
+              <div className="statusCard">
+                <span className="statusLabel">Tauri</span>
+                <strong>{status.tauri}</strong>
+              </div>
+              <div className="statusCard">
+                <span className="statusLabel">Selected movie</span>
+                <strong>{media?.originalFileName ?? 'No media selected'}</strong>
+              </div>
+              <div className="statusCard">
+                <span className="statusLabel">Room status</span>
+                <strong>{room ? room.room.status : 'No active room'}</strong>
+              </div>
+              <div className="statusCard">
+                <span className="statusLabel">Guest viewers</span>
+                <strong>{guestCount}</strong>
+              </div>
+              {showDebugUrls && (
+                <>
+                  <div className="statusCard">
+                    <span className="statusLabel">API</span>
+                    <strong>{status.apiBaseUrl}</strong>
+                  </div>
+                  <div className="statusCard">
+                    <span className="statusLabel">Web</span>
+                    <strong>{status.webUrl}</strong>
+                  </div>
+                </>
+              )}
             </div>
           )}
-
-          {recentMedia.kind === 'success' && recentMedia.data.length === 0 && (
-            <div className="fileSummary">
-              <p className="fileName">No previous uploads yet</p>
-              <p className="fileMeta">Upload your first movie below and it will appear here for future sessions.</p>
-            </div>
-          )}
-        </section>
-
-        <section className="uploadPanel">
-          <div>
-            <p className="sectionEyebrow">Select media</p>
-            <h2>Choose a movie file from this machine</h2>
-            <p className="sectionCopy">
-              Accepted by the browser picker first, then validated again on the server during ffprobe.
-            </p>
-          </div>
-
-          <div className="actionsRow">
-            <input
-              accept="video/*,.mkv,.mp4,.mov,.avi,.webm"
-              className="hiddenInput"
-              onChange={(event) => {
-                const nextFile = event.target.files?.[0] ?? null;
-                setSelectedFile(nextFile);
-                setError(null);
-                setMessage(nextFile ? 'File selected and ready to upload.' : null);
-              }}
-              ref={fileInputRef}
-              type="file"
-            />
-            <button
-              className="primaryButton"
-              onClick={() => fileInputRef.current?.click()}
-              type="button"
-            >
-              Pick local movie
-            </button>
-            <button
-              className="secondaryButton"
-              disabled={!selectedFile || !status || uploadState === 'uploading'}
-              onClick={() => {
-                void uploadSelectedFile();
-              }}
-              type="button"
-            >
-              {uploadState === 'uploading' ? 'Uploading...' : 'Upload and process'}
-            </button>
-          </div>
-
-          <div className="fileSummary">
-            <p className="fileName">{selectedFile?.name ?? 'No file selected yet'}</p>
-            <p className="fileMeta">
-              {selectedFile
-                ? `${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB`
-                : 'Choose a local movie only when you want to add a new upload to the server.'}
-            </p>
-          </div>
-        </section>
-
-        {media && (
-          <section className="uploadPanel">
-            <div>
-              <p className="sectionEyebrow">Select subtitles</p>
-              <h2>Attach subtitle files to the current media</h2>
-              <p className="sectionCopy">
-                Upload <span className="font-mono">.srt</span>, <span className="font-mono">.vtt</span>, or <span className="font-mono">.ass</span>. This also works for media selected from a previous session, so you can keep adding subtitles later.
-              </p>
-            </div>
-
-            <div className="actionsRow">
-              <input
-                accept=".srt,.vtt,.ass"
-                className="hiddenInput"
-                onChange={(event) => {
-                  const nextFile = event.target.files?.[0] ?? null;
-                  setSelectedSubtitleFile(nextFile);
-                  setError(null);
-                  setMessage(nextFile ? 'Subtitle selected and ready to upload.' : null);
-                }}
-                ref={subtitleInputRef}
-                type="file"
-              />
-              <button
-                className="primaryButton"
-                onClick={() => subtitleInputRef.current?.click()}
-                type="button"
-              >
-                Pick subtitle file
-              </button>
-              <button
-                className="secondaryButton"
-                disabled={!selectedSubtitleFile || !status || subtitleUploadState === 'uploading'}
-                onClick={() => {
-                  void uploadSelectedSubtitle();
-                }}
-                type="button"
-              >
-                {subtitleUploadState === 'uploading' ? 'Uploading...' : 'Upload subtitle'}
-              </button>
-            </div>
-
-            <div className="fileSummary">
-              <p className="fileName">{selectedSubtitleFile?.name ?? 'No subtitle selected yet'}</p>
-              <p className="fileMeta">
-                {subtitles.length > 0
-                  ? `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} attached to this media.`
-                  : 'Add at least one subtitle to exercise the Phase 3 player flow.'}
-              </p>
-            </div>
-          </section>
-        )}
-
-        {room && (
-          <section className="uploadPanel">
-            <div>
-              <p className="sectionEyebrow">Room state</p>
-              <h2>Manage the active secret room</h2>
-              <p className="sectionCopy">
-                Update the shared subtitle, review the expiration, and watch the participant list refresh while this room is open.
-              </p>
-            </div>
-
-            <div className="actionsRow roomSubtitleRow">
-              <select
-                className="selectInput"
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setSelectedRoomSubtitleId(nextValue === '__off__' ? null : nextValue);
-                }}
-                value={selectedRoomSubtitleId ?? '__off__'}
-              >
-                <option value="__off__">No subtitle</option>
-                {subtitles.map((subtitle) => (
-                  <option key={subtitle.id} value={subtitle.id}>
-                    {subtitle.label} ({subtitle.format})
-                  </option>
-                ))}
-              </select>
-              <button
-                className="secondaryButton"
-                disabled={roomSubtitleState === 'uploading'}
-                onClick={() => {
-                  void updateRoomSubtitle();
-                }}
-                type="button"
-              >
-                {roomSubtitleState === 'uploading' ? 'Updating...' : 'Update room subtitle'}
-              </button>
-            </div>
-
-            <div className="fileSummary">
-              <p className="fileName">
-                Current room subtitle: {room.subtitles.find((subtitle) => subtitle.id === room.room.activeSubtitleId)?.label ?? 'None'}
-              </p>
-              <p className="fileMeta">Room token: {room.room.token}</p>
-              <p className="fileMeta">Expires: {room.room.expiresAt ? formatImportedAt(room.room.expiresAt) : 'No expiration set'}</p>
-              <p className="fileMeta">Participants: {room.participants.map((participant) => `${participant.displayName} (${participant.role}, ${participant.connectionState})`).join(' • ') || 'Waiting for viewers'}</p>
-            </div>
-          </section>
-        )}
+        </header>
 
         {message && <p className="notice success">{message}</p>}
         {error && <p className="notice error">{error}</p>}
 
-        {media && (
-          <section className="resultGrid">
-            <article className="card">
-              <p className="sectionEyebrow">Processing state</p>
-              <h2>{media.originalFileName}</h2>
-              <p className="cardCopy">{getStatusText(media.status)}</p>
-              <dl className="detailsGrid">
+        <section className="dashboardGrid">
+          <div className="dashboardColumn">
+            <section className="surfacePanel">
+              <div className="sectionHeader">
                 <div>
-                  <dt>Duration</dt>
-                  <dd>{formatDuration(media.durationMs)}</dd>
+                  <p className="sectionEyebrow">Media library</p>
+                  <h2>Reuse previous uploads</h2>
                 </div>
-                <div>
-                  <dt>Video</dt>
-                  <dd>
-                    {media.videoCodec ?? 'Unknown'}
-                    {media.width && media.height ? ` • ${media.width}x${media.height}` : ''}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Audio</dt>
-                  <dd>{media.audioCodec ?? 'Unknown'}</dd>
-                </div>
-                <div>
-                  <dt>Queued</dt>
-                  <dd>{processingQueued ? 'Yes' : 'Already running / finished'}</dd>
-                </div>
-              </dl>
-
-              {media.processingError && (
-                <p className="inlineError">{media.processingError}</p>
-              )}
-
-              <div className="fileSummary">
-                <p className="fileName">Room host settings</p>
-                <div className="actionsRow roomSubtitleRow">
-                  <input
-                    className="selectInput"
-                    maxLength={48}
-                    onChange={(event) => setHostDisplayName(event.target.value)}
-                    placeholder="Host display name"
-                    value={hostDisplayName}
-                  />
-                  <select
-                    className="selectInput"
-                    onChange={(event) => setRoomExpiryHours(event.target.value)}
-                    value={roomExpiryHours}
-                  >
-                    <option value="6">Expires in 6 hours</option>
-                    <option value="24">Expires in 24 hours</option>
-                    <option value="72">Expires in 72 hours</option>
-                    <option value="never">No expiration</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="actionsRow leftAligned">
-                <button
-                  className="secondaryButton"
-                  disabled={uploadState === 'uploading' || deleteState === 'uploading'}
-                  onClick={() => {
-                    void retryProcessing();
-                  }}
-                  type="button"
-                >
-                  Retry processing
-                </button>
-                <button
-                  className="secondaryButton"
-                  disabled={deleteState === 'uploading' || uploadState === 'uploading'}
-                  onClick={() => {
-                    void deleteSelectedMedia();
-                  }}
-                  type="button"
-                >
-                  {deleteState === 'uploading'
-                    ? 'Deleting...'
-                    : deleteConfirmArmed
-                      ? 'Confirm delete'
-                      : 'Delete media'}
-                </button>
-                <button
-                  className="secondaryButton"
-                  disabled={media.status !== 'ready' || roomState === 'uploading'}
-                  onClick={() => {
-                    void createRoom();
-                  }}
-                  type="button"
-                >
-                  {roomState === 'uploading' ? 'Creating room...' : 'Create room'}
+                <button className="ghostButton" onClick={() => void refreshRecentMedia()} type="button">
+                  Refresh list
                 </button>
               </div>
-            </article>
 
-            <article className="card accentCard">
-              <p className="sectionEyebrow">Share and preview</p>
-              <h2>Generated URLs</h2>
-              <p className="cardCopy">
-                Local room URLs are for this machine. LAN room URLs are for other devices on the same network.
+              <p className="sectionCopy">
+                Pick an existing movie from the server when you want to open a new session
+                without re-uploading the video.
               </p>
 
-              <div className="linkGroup">
-                <span className="linkLabel">Configured secret room URL</span>
-                <p className="linkValue">{room?.shareUrl ?? 'Create a room after processing completes'}</p>
-                {room?.shareUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(room.shareUrl)} type="button">
-                    Copy configured room URL
-                  </button>
-                )}
-              </div>
+              {recentMedia.kind === 'loading' && <div className="emptyState">Loading recent media from the server...</div>}
+              {recentMedia.kind === 'error' && <div className="emptyState errorState">{recentMedia.message}</div>}
 
-              <div className="linkGroup">
-                <span className="linkLabel">Local secret room URL</span>
-                <p className="linkValue">{roomPlayerUrl ?? 'Create a room to get the dedicated /room/<token> link'}</p>
-                {roomPlayerUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(roomPlayerUrl)} type="button">
-                    Copy local room player URL
-                  </button>
-                )}
-              </div>
-
-              <div className="linkGroup">
-                <span className="linkLabel">LAN secret room URL</span>
-                <p className="linkValue">{lanRoomPlayerUrl ?? 'Create a room and make sure LAN detection succeeds'}</p>
-                {lanRoomPlayerUrl && (
-                  <button className="ghostButton" onClick={() => void copyText(lanRoomPlayerUrl)} type="button">
-                    Copy LAN secret room URL
-                  </button>
-                )}
-              </div>
-
-              {showDebugUrls && (
-                <>
-                  <div className="linkGroup">
-                    <span className="linkLabel">Local player URL</span>
-                    <p className="linkValue">{playerUrl ?? 'Unavailable until media exists'}</p>
-                    {playerUrl && (
-                      <button className="ghostButton" onClick={() => void copyText(playerUrl)} type="button">
-                        Copy local player URL
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="linkGroup">
-                    <span className="linkLabel">LAN player URL</span>
-                    <p className="linkValue">{lanPlayerUrl ?? 'Available after LAN detection succeeds'}</p>
-                    {lanPlayerUrl && (
-                      <button className="ghostButton" onClick={() => void copyText(lanPlayerUrl)} type="button">
-                        Copy LAN player URL
-                      </button>
-                    )}
-                  </div>
-                </>
+              {recentMedia.data.length > 0 && (
+                <div className="mediaQueue">
+                  {recentMedia.data.map((item) => (
+                    <button
+                      className={`mediaQueueItem${media?.id === item.id ? ' selected' : ''}`}
+                      key={item.id}
+                      onClick={() => {
+                        void selectExistingMedia(item.id);
+                      }}
+                      type="button"
+                    >
+                      <div className="mediaQueueHeader">
+                        <p className="mediaQueueTitle">{item.originalFileName}</p>
+                        <span className={`mediaQueueBadge ${item.status}`}>{getStatusText(item.status)}</span>
+                      </div>
+                      <p className="mediaQueueMeta">Imported {formatDateTime(item.createdAt)}</p>
+                      <p className="mediaQueueMeta">Duration {formatDuration(item.durationMs)}</p>
+                    </button>
+                  ))}
+                </div>
               )}
-            </article>
-          </section>
-        )}
 
-        {subtitles.length > 0 && (
-          <section className="resultGrid">
-            <article className="card">
-              <p className="sectionEyebrow">Subtitle tracks</p>
-              <h2>Available tracks</h2>
-              <p className="cardCopy">
-                These tracks are now registered on the server and can be loaded by the browser player.
+              {recentMedia.kind === 'success' && recentMedia.data.length === 0 && (
+                <div className="emptyState">
+                  No previous uploads yet. Import a movie below to start the host workflow.
+                </div>
+              )}
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Import movie</p>
+                  <h2>Upload new media from this machine</h2>
+                </div>
+              </div>
+              <p className="sectionCopy">
+                The selected file is uploaded to the local server and processed into HLS for browser playback.
               </p>
-              <div className="linkGroup">
-                {subtitles.map((subtitle) => (
-                  <p className="linkValue" key={subtitle.id}>
-                    {subtitle.label} • {subtitle.format}{subtitle.isDefault ? ' • default' : ''}
+
+              <div className="actionsRow">
+                <input
+                  accept="video/*,.mkv,.mp4,.mov,.avi,.webm"
+                  className="hiddenInput"
+                  onChange={(event) => {
+                    const nextFile = event.target.files?.[0] ?? null;
+                    setSelectedFile(nextFile);
+                    setError(null);
+                    setMessage(nextFile ? 'Movie selected and ready to upload.' : null);
+                  }}
+                  ref={fileInputRef}
+                  type="file"
+                />
+                <button
+                  className="primaryButton"
+                  disabled={hasActiveRoom}
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                >
+                  Pick local movie
+                </button>
+                <button
+                  className="secondaryButton"
+                  disabled={!selectedFile || !status || uploadState === 'working' || hasActiveRoom}
+                  onClick={() => {
+                    void uploadSelectedFile();
+                  }}
+                  type="button"
+                >
+                  {uploadState === 'working' ? 'Uploading...' : 'Upload and process'}
+                </button>
+              </div>
+
+              <div className="infoCard">
+                <p className="infoTitle">{selectedFile?.name ?? 'No file selected yet'}</p>
+                <p className="infoMeta">
+                  {selectedFile
+                    ? `${formatFileSize(selectedFile.size)}`
+                    : 'Choose a movie only when you want to add a new upload to the local server.'}
+                </p>
+                {hasActiveRoom && (
+                  <p className="infoMeta warningText">
+                    The current room is still active. Close it before switching to a new movie.
                   </p>
+                )}
+              </div>
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Current movie</p>
+                  <h2>{media?.originalFileName ?? 'Nothing selected yet'}</h2>
+                </div>
+                {media && <span className={`mediaQueueBadge ${media.status}`}>{getStatusText(media.status)}</span>}
+              </div>
+
+              <p className="sectionCopy">
+                This panel keeps the selected movie, processing state, and host-only actions together.
+              </p>
+
+              <div className="metricsGrid">
+                <div className="metricCard">
+                  <span className="metricLabel">Duration</span>
+                  <strong>{formatDuration(media?.durationMs ?? null)}</strong>
+                </div>
+                <div className="metricCard">
+                  <span className="metricLabel">Video</span>
+                  <strong>
+                    {media?.videoCodec ?? 'Unknown'}
+                    {media?.width && media?.height ? ` • ${media.width}x${media.height}` : ''}
+                  </strong>
+                </div>
+                <div className="metricCard">
+                  <span className="metricLabel">Audio</span>
+                  <strong>{media?.audioCodec ?? 'Unknown'}</strong>
+                </div>
+                <div className="metricCard">
+                  <span className="metricLabel">Processing job</span>
+                  <strong>{processingQueued ? 'Queued now' : 'Existing or finished'}</strong>
+                </div>
+              </div>
+
+              <div className="progressList">
+                {getProcessingSteps(media).map((step) => (
+                  <div className={`progressItem ${step.state}`} key={step.label}>
+                    <span className="progressDot" />
+                    <div>
+                      <p className="progressTitle">{step.label}</p>
+                      <p className="progressDescription">{step.description}</p>
+                    </div>
+                  </div>
                 ))}
               </div>
-            </article>
-          </section>
-        )}
+
+              {media?.processingError && <p className="inlineError">{media.processingError}</p>}
+
+              {media && (
+                <div className="actionsRow">
+                  <button
+                    className="secondaryButton"
+                    disabled={uploadState === 'working' || deleteState === 'working' || hasActiveRoom}
+                    onClick={() => {
+                      void retryProcessing();
+                    }}
+                    type="button"
+                  >
+                    Retry processing
+                  </button>
+                  <button
+                    className="secondaryButton dangerButton"
+                    disabled={deleteState === 'working' || uploadState === 'working'}
+                    onClick={() => {
+                      void deleteSelectedMedia();
+                    }}
+                    type="button"
+                  >
+                    {deleteState === 'working'
+                      ? 'Deleting...'
+                      : deleteConfirmArmed
+                        ? 'Confirm delete'
+                        : 'Delete movie'}
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {media && (
+              <section className="surfacePanel">
+                <div className="sectionHeader">
+                  <div>
+                    <p className="sectionEyebrow">Subtitles</p>
+                    <h2>Attach and choose tracks</h2>
+                  </div>
+                </div>
+                <p className="sectionCopy">
+                  Upload <span className="fontMono">.srt</span>, <span className="fontMono">.vtt</span>, or <span className="fontMono">.ass</span>.
+                  The selected track can be used as the room default and updated later while the room is open.
+                </p>
+
+                <div className="actionsRow">
+                  <input
+                    accept=".srt,.vtt,.ass"
+                    className="hiddenInput"
+                    onChange={(event) => {
+                      const nextFile = event.target.files?.[0] ?? null;
+                      setSelectedSubtitleFile(nextFile);
+                      setError(null);
+                      setMessage(nextFile ? 'Subtitle selected and ready to upload.' : null);
+                    }}
+                    ref={subtitleInputRef}
+                    type="file"
+                  />
+                  <button className="primaryButton" onClick={() => subtitleInputRef.current?.click()} type="button">
+                    Pick subtitle file
+                  </button>
+                  <button
+                    className="secondaryButton"
+                    disabled={!selectedSubtitleFile || !status || subtitleUploadState === 'working'}
+                    onClick={() => {
+                      void uploadSelectedSubtitle();
+                    }}
+                    type="button"
+                  >
+                    {subtitleUploadState === 'working' ? 'Uploading...' : 'Upload subtitle'}
+                  </button>
+                </div>
+
+                <div className="infoCard">
+                  <p className="infoTitle">{selectedSubtitleFile?.name ?? 'No subtitle file selected for upload'}</p>
+                  <p className="infoMeta">
+                    {selectedSubtitleFile
+                      ? 'This file is ready to upload to the current movie.'
+                      : subtitles.length > 0
+                        ? `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} already attached to this movie.`
+                        : 'No subtitle tracks attached yet.'}
+                  </p>
+                </div>
+
+                {subtitles.length > 0 ? (
+                  <div className="subtitleList">
+                    {subtitles.map((subtitle) => (
+                      <div className="subtitleCard" key={subtitle.id}>
+                        <div>
+                          <p className="subtitleTitle">{subtitle.label}</p>
+                          <p className="subtitleMeta">
+                            {subtitle.format}
+                            {subtitle.language ? ` • ${subtitle.language}` : ''}
+                            {subtitle.isDefault ? ' • default' : ''}
+                          </p>
+                        </div>
+                        {selectedRoomSubtitleId === subtitle.id && (
+                          <span className="pill activePill">Selected for room</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="emptyState">Subtitle uploads will appear here after conversion.</div>
+                )}
+              </section>
+            )}
+          </div>
+
+          <div className="dashboardColumn">
+            <section className="surfacePanel accentPanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Room controls</p>
+                  <h2>Create and manage the watch room</h2>
+                </div>
+              </div>
+
+              {media ? (
+                <>
+                  <p className="sectionCopy">
+                    Room creation stays inside the desktop dashboard. The selected subtitle becomes the initial room subtitle.
+                  </p>
+
+                  <div className="fieldGrid">
+                    <label className="field">
+                      <span className="fieldLabel">Host display name</span>
+                      <input
+                        className="selectInput"
+                        maxLength={48}
+                        onChange={(event) => setHostDisplayName(event.target.value)}
+                        placeholder="Host display name"
+                        value={hostDisplayName}
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span className="fieldLabel">Room expiry</span>
+                      <select
+                        className="selectInput"
+                        onChange={(event) => setRoomExpiryHours(event.target.value)}
+                        value={roomExpiryHours}
+                      >
+                        <option value="6">Expires in 6 hours</option>
+                        <option value="24">Expires in 24 hours</option>
+                        <option value="72">Expires in 72 hours</option>
+                        <option value="never">No expiration</option>
+                      </select>
+                    </label>
+
+                    <label className="field fieldSpan">
+                      <span className="fieldLabel">Subtitle for the room</span>
+                      <select
+                        className="selectInput"
+                        onChange={(event) => {
+                          const nextValue = event.target.value;
+                          setSelectedRoomSubtitleId(nextValue === '__off__' ? null : nextValue);
+                        }}
+                        value={selectedRoomSubtitleId ?? '__off__'}
+                      >
+                        <option value="__off__">No subtitle</option>
+                        {subtitles.map((subtitle) => (
+                          <option key={subtitle.id} value={subtitle.id}>
+                            {subtitle.label} ({subtitle.format})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="actionsRow">
+                    <button
+                      className="primaryButton"
+                      disabled={media.status !== 'ready' || roomState === 'working' || hasActiveRoom}
+                      onClick={() => {
+                        void createRoom();
+                      }}
+                      type="button"
+                    >
+                      {roomState === 'working' ? 'Creating room...' : 'Create room'}
+                    </button>
+
+                    {room && (
+                      <button
+                        className="secondaryButton"
+                        disabled={
+                          roomSubtitleState === 'working'
+                          || selectedRoomSubtitleId === room.room.activeSubtitleId
+                        }
+                        onClick={() => {
+                          void updateRoomSubtitle();
+                        }}
+                        type="button"
+                      >
+                        {roomSubtitleState === 'working' ? 'Updating...' : 'Update room subtitle'}
+                      </button>
+                    )}
+                  </div>
+
+                  {media.status !== 'ready' && (
+                    <div className="emptyState">
+                      Finish media processing before creating a room.
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="emptyState">
+                  Select a movie first. Room controls appear once the host has an active media selection.
+                </div>
+              )}
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Room overview</p>
+                  <h2>{room ? 'Current room state' : 'No room yet'}</h2>
+                </div>
+              </div>
+
+              {room ? (
+                <>
+                  <div className="metricsGrid">
+                    <div className="metricCard">
+                      <span className="metricLabel">Token</span>
+                      <strong>{room.room.token}</strong>
+                    </div>
+                    <div className="metricCard">
+                      <span className="metricLabel">Status</span>
+                      <strong>{room.room.status}</strong>
+                    </div>
+                    <div className="metricCard">
+                      <span className="metricLabel">Subtitle</span>
+                      <strong>{activeRoomSubtitle?.label ?? 'None'}</strong>
+                    </div>
+                    <div className="metricCard">
+                      <span className="metricLabel">Expires</span>
+                      <strong>{room.room.expiresAt ? formatDateTime(room.room.expiresAt) : 'No expiration'}</strong>
+                    </div>
+                  </div>
+
+                  <div className="infoCard">
+                    <p className="infoTitle">{room.media?.originalFileName ?? 'No media attached'}</p>
+                    <p className="infoMeta">
+                      Playback state: {room.room.playbackState} at {room.room.currentPlaybackTime.toFixed(2)}s
+                    </p>
+                    <p className="infoMeta">
+                      Last state update: {formatDateTime(room.room.lastStateUpdatedAt)}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="emptyState">
+                  Create a room to make the secret link, participant state, and subtitle sync visible here.
+                </div>
+              )}
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Share</p>
+                  <h2>Copy room URLs</h2>
+                </div>
+              </div>
+
+              {room ? (
+                <div className="shareList">
+                  <div className="shareCard">
+                    <span className="shareLabel">Configured secret room URL</span>
+                    <p className="shareValue">{room.shareUrl}</p>
+                    <button className="ghostButton" onClick={() => void copyText(room.shareUrl)} type="button">
+                      Copy configured URL
+                    </button>
+                  </div>
+
+                  {roomPlayerUrl && (
+                    <div className="shareCard">
+                      <span className="shareLabel">Local room URL</span>
+                      <p className="shareValue">{roomPlayerUrl}</p>
+                      <button className="ghostButton" onClick={() => void copyText(roomPlayerUrl)} type="button">
+                        Copy local URL
+                      </button>
+                    </div>
+                  )}
+
+                  {lanRoomPlayerUrl && (
+                    <div className="shareCard">
+                      <span className="shareLabel">LAN room URL</span>
+                      <p className="shareValue">{lanRoomPlayerUrl}</p>
+                      <button className="ghostButton" onClick={() => void copyText(lanRoomPlayerUrl)} type="button">
+                        Copy LAN URL
+                      </button>
+                    </div>
+                  )}
+
+                  {showDebugUrls && (
+                    <>
+                      {playerUrl && (
+                        <div className="shareCard">
+                          <span className="shareLabel">Local player preview</span>
+                          <p className="shareValue">{playerUrl}</p>
+                          <button className="ghostButton" onClick={() => void copyText(playerUrl)} type="button">
+                            Copy player URL
+                          </button>
+                        </div>
+                      )}
+
+                      {lanPlayerUrl && (
+                        <div className="shareCard">
+                          <span className="shareLabel">LAN player preview</span>
+                          <p className="shareValue">{lanPlayerUrl}</p>
+                          <button className="ghostButton" onClick={() => void copyText(lanPlayerUrl)} type="button">
+                            Copy LAN player URL
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="emptyState">Share URLs appear after room creation.</div>
+              )}
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Participants</p>
+                  <h2>Presence and connection state</h2>
+                </div>
+              </div>
+
+              {room ? (
+                participants.length > 0 ? (
+                  <div className="participantList">
+                    {participants.map((participant) => (
+                      <div className="participantCard" key={participant.id}>
+                        <div className="participantHeader">
+                          <div>
+                            <p className="participantName">{participant.displayName}</p>
+                            <p className="participantMeta">Joined {formatDateTime(participant.joinedAt)}</p>
+                          </div>
+                          <div className="participantBadges">
+                            <span className="pill">{getParticipantRoleLabel(participant)}</span>
+                            <span
+                              className={`pill ${participant.connectionState === 'connected' ? 'activePill' : 'mutedPill'}`}
+                            >
+                              {getParticipantConnectionLabel(participant)}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="participantMeta">Last seen {formatDateTime(participant.lastSeenAt)}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="emptyState">Waiting for participants to join this room.</div>
+                )
+              ) : (
+                <div className="emptyState">
+                  Participant status becomes visible once a room has been created.
+                </div>
+              )}
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Host summary</p>
+                  <h2>Current session selection</h2>
+                </div>
+              </div>
+              <div className="infoCard">
+                <p className="infoTitle">{media?.originalFileName ?? 'No movie selected'}</p>
+                <p className="infoMeta">Planned room subtitle: {selectedSubtitle?.label ?? 'None'}</p>
+                <p className="infoMeta">
+                  Room action: {room ? 'Manage current room' : 'Create a new room once media is ready'}
+                </p>
+              </div>
+            </section>
+          </div>
+        </section>
       </section>
     </main>
   );
