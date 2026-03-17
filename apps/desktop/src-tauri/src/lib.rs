@@ -81,7 +81,7 @@ fn stop_host_server_if_running() {
     }
 
     let Some(repo_root) = find_repo_root() else {
-        eprintln!("VideoShare desktop could not locate repo root; skipping host shutdown.");
+        eprintln!("VideoTogether desktop could not locate repo root; skipping host shutdown.");
         return;
     };
 
@@ -107,12 +107,12 @@ fn stop_host_server_if_running() {
         Ok(result) if result.success() => {}
         Ok(result) => {
             eprintln!(
-                "VideoShare desktop stop-host script exited with status {:?}.",
+                "VideoTogether desktop stop-host script exited with status {:?}.",
                 result.code()
             );
         }
         Err(error) => {
-            eprintln!("VideoShare desktop failed to run stop-host script: {error}");
+            eprintln!("VideoTogether desktop failed to run stop-host script: {error}");
         }
     }
 }

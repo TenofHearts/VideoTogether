@@ -1,7 +1,7 @@
 [package]
 name = "videoshare-desktop"
 version = "0.1.0"
-description = "VideoShare desktop shell"
+description = "VideoTogether desktop shell"
 authors = ["ASUS"]
 edition = "2021"
 
@@ -19,4 +19,4 @@ tauri = { version = "2.3.1", features = [] }
 url = "2"
 
 [package.metadata]
-app-name = 'VideoShare'
+app-name = 'VideoTogether'

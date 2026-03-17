@@ -1115,7 +1115,7 @@ export default function App() {
       <section className="panel">
         <header className="hero">
           <div className="heroCopy">
-            <p className="eyebrow">VideoShare host dashboard</p>
+            <p className="eyebrow">VideoTogether host dashboard</p>
             <h1>Run the full host workflow from one desktop control panel.</h1>
             <p className="copy">
               Import or reuse a movie, process it to HLS, manage subtitles,

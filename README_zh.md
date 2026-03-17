@@ -1,6 +1,6 @@
-# VideoShare
+# VideoTogether
 
-VideoShare 是一个面向两人私密观影场景的桌面优先项目。
+VideoTogether 是一个面向两人私密观影场景的桌面优先项目。
 
 主机端在本机导入视频文件，使用 `ffprobe` / `ffmpeg` 处理成 HLS 流，创建私密房间链接，然后把链接发给另一位观看者。观看者不需要安装桌面端，只需要用浏览器打开房间链接即可。
 
@@ -238,7 +238,7 @@ npm run desktop:package
 
 打包输出目录：
 
-- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoShare/apps/desktop/src-tauri/target/release/bundle)
+- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoTogether/apps/desktop/src-tauri/target/release/bundle)
 
 ## ngrok 使用方式
 

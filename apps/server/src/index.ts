@@ -10,7 +10,7 @@ try {
     port: env.port
   });
 
-  app.log.info({ address }, 'VideoShare server listening');
+  app.log.info({ address }, 'VideoTogether server listening');
 } catch (error) {
   app.log.error(error);
   process.exit(1);

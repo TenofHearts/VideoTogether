@@ -1,6 +1,6 @@
-# VideoShare
+# VideoTogether
 
-VideoShare is a desktop-first private movie sharing project designed for two people.
+VideoTogether is a desktop-first private movie sharing project designed for two people.
 
 The host imports a local video file, processes it into HLS with `ffprobe` and `ffmpeg`, creates a private room link, and shares that link with a second viewer. The viewer does not need the desktop app and can join directly from a browser.
 
@@ -238,7 +238,7 @@ Current bundle outputs include:
 
 Bundle output directory:
 
-- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoShare/apps/desktop/src-tauri/target/release/bundle)
+- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoTogether/apps/desktop/src-tauri/target/release/bundle)
 
 ## ngrok Usage
 

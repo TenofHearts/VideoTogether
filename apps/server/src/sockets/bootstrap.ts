@@ -86,7 +86,7 @@ export async function bootstrapRealtime(
   io.on('connection', (socket) => {
     app.log.info({ socketId: socket.id }, 'Socket.IO client connected');
     socket.emit('system:hello', {
-      message: 'VideoShare realtime ready'
+      message: 'VideoTogether realtime ready'
     });
 
     function requireSocketSession(token: string, participantId: string) {
