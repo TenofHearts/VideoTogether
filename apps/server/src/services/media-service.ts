@@ -62,6 +62,9 @@ type ProbeResult = {
 };
 
 const supportedSubtitleExtensions = new Set(['.srt', '.vtt', '.ass']);
+const HLS_SEGMENT_DURATION_SECONDS = 4;
+const HLS_MAX_VIDEO_BITRATE = '4500k';
+const HLS_BUFFER_SIZE = '9000k';
 
 function mapMedia(row: MediaRow): Media {
   return {
@@ -439,22 +442,32 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         '-c:v',
         'libx264',
         '-preset',
-        'veryfast',
+        'fast',
         '-crf',
-        '23',
+        '21',
+        '-maxrate',
+        HLS_MAX_VIDEO_BITRATE,
+        '-bufsize',
+        HLS_BUFFER_SIZE,
+        '-profile:v',
+        'high',
         '-pix_fmt',
         'yuv420p',
+        '-sc_threshold',
+        '0',
+        '-force_key_frames',
+        `expr:gte(t,n_forced*${HLS_SEGMENT_DURATION_SECONDS})`,
         '-c:a',
         'aac',
         '-b:a',
-        '128k',
+        '160k',
         '-ac',
         '2',
         '-sn',
         '-f',
         'hls',
         '-hls_time',
-        '6',
+        String(HLS_SEGMENT_DURATION_SECONDS),
         '-hls_list_size',
         '0',
         '-hls_playlist_type',

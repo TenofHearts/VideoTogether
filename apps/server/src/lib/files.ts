@@ -12,9 +12,23 @@ const contentTypes = new Map<string, string>([
 ]);
 
 export function getContentType(filePath: string): string {
-  const extension = filePath.slice(filePath.lastIndexOf('.'));
+  const extension = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
 
   return contentTypes.get(extension) ?? 'application/octet-stream';
+}
+
+function getCacheControl(filePath: string): string {
+  const extension = filePath.slice(filePath.lastIndexOf('.')).toLowerCase();
+
+  if (extension === '.m3u8' || extension === '.vtt') {
+    return 'public, max-age=60, stale-while-revalidate=300';
+  }
+
+  if (extension === '.ts' || extension === '.m4s') {
+    return 'public, max-age=604800, immutable';
+  }
+
+  return 'public, max-age=3600';
 }
 
 export function resolveSafeChildPath(
@@ -54,10 +68,10 @@ export async function streamFile(reply: FastifyReply, filePath: string) {
       message: 'Asset not found'
     });
   }
-
-  reply.header('Cache-Control', 'no-store');
+  reply.header('Cache-Control', getCacheControl(filePath));
   reply.header('Content-Length', String(fileStats.size));
   reply.type(getContentType(filePath));
 
   return reply.send(createReadStream(filePath));
 }
+

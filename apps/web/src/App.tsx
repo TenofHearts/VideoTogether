@@ -6,9 +6,7 @@ import type {
   MediaListResponse,
   MediaSubtitlesResponse,
   Participant,
-  PlaybackResyncEvent,
   PlaybackState,
-  PlaybackStateReportPayload,
   PlaybackUpdateEvent,
   Room,
   RoomJoinResponse,
@@ -93,7 +91,6 @@ type PlayerRuntimeState =
   | 'seeking'
   | 'error';
 
-const PLAYBACK_GUARD_WINDOW_MS = 250;
 const SOFT_RESYNC_WINDOW_MS = 1500;
 
 function getPlaybackSignature(room: Room): string {
@@ -125,6 +122,23 @@ function mergeRoomPlayback(
   return {
     ...current,
     room
+  };
+}
+
+function mergeRoomSnapshot(
+  current: RoomLookupResponse | null,
+  next: RoomLookupResponse
+): RoomLookupResponse {
+  return {
+    ...next,
+    media:
+      current?.media && next.media && isSameMedia(current.media, next.media)
+        ? current.media
+        : next.media,
+    subtitles:
+      current && isSameSubtitleList(current.subtitles, next.subtitles)
+        ? current.subtitles
+        : next.subtitles
   };
 }
 
@@ -439,24 +453,29 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const autoJoinTokenRef = useRef<string | null>(null);
-  const playbackGuardTimerRef = useRef<number | null>(null);
   const softResyncTimerRef = useRef<number | null>(null);
-  const suppressPlaybackEventsRef = useRef(false);
+  const suppressedPlaybackEventsRef = useRef({
+    play: 0,
+    pause: 0,
+    seek: 0
+  });
   const lastAppliedPlaybackSignatureRef = useRef<string | null>(null);
   const roomToken = route.kind === 'room' ? route.token : null;
   const mediaId = route.kind === 'home' ? route.mediaId : null;
 
-  function armPlaybackGuard() {
-    suppressPlaybackEventsRef.current = true;
+  function suppressNextPlaybackEvent(eventName: 'play' | 'pause' | 'seek') {
+    suppressedPlaybackEventsRef.current[eventName] += 1;
+  }
 
-    if (playbackGuardTimerRef.current) {
-      window.clearTimeout(playbackGuardTimerRef.current);
+  function shouldSuppressPlaybackEvent(eventName: 'play' | 'pause' | 'seek') {
+    const pending = suppressedPlaybackEventsRef.current[eventName];
+
+    if (pending <= 0) {
+      return false;
     }
 
-    playbackGuardTimerRef.current = window.setTimeout(() => {
-      suppressPlaybackEventsRef.current = false;
-      playbackGuardTimerRef.current = null;
-    }, PLAYBACK_GUARD_WINDOW_MS);
+    suppressedPlaybackEventsRef.current[eventName] -= 1;
+    return true;
   }
 
   function clearSoftResyncTimer() {
@@ -492,7 +511,6 @@ export default function App() {
       room.playbackState === 'paused' ||
       Math.abs(driftMs) >= 1500;
 
-    armPlaybackGuard();
     clearSoftResyncTimer();
 
     if (video.readyState === 0) {
@@ -505,6 +523,7 @@ export default function App() {
     }
 
     if (Math.abs(targetTime - currentTime) > 0.05 && needsHardSync) {
+      suppressNextPlaybackEvent('seek');
       video.currentTime = Math.max(0, targetTime);
     }
 
@@ -523,12 +542,28 @@ export default function App() {
         }, SOFT_RESYNC_WINDOW_MS);
       }
 
+      const requestedPlay = video.paused;
+      if (requestedPlay) {
+        suppressNextPlaybackEvent('play');
+      }
+
       void video.play().catch(() => {
+        if (requestedPlay) {
+          suppressedPlaybackEventsRef.current.play = Math.max(
+            0,
+            suppressedPlaybackEventsRef.current.play - 1
+          );
+        }
+
         setSyncMessage(
           'Shared playback is waiting for a local play interaction.'
         );
       });
     } else {
+      if (!video.paused) {
+        suppressNextPlaybackEvent('pause');
+      }
+
       video.pause();
       video.playbackRate = targetRate;
     }
@@ -723,7 +758,13 @@ export default function App() {
           return;
         }
 
-        setRoomState({ kind: 'success', data });
+        setRoomState((current) => ({
+          kind: 'success',
+          data:
+            current.kind === 'success'
+              ? mergeRoomSnapshot(current.data, data)
+              : data
+        }));
         setSubtitleState((current) => {
           if (isSameSubtitleList(current.data, data.subtitles)) {
             return current.kind === 'success'
@@ -955,8 +996,22 @@ export default function App() {
     );
 
     socket.on('room:state', (payload: RoomLookupResponse) => {
-      setRoomState({ kind: 'success', data: payload });
-      setSubtitleState({ kind: 'success', data: payload.subtitles });
+      setRoomState((current) => ({
+        kind: 'success',
+        data:
+          current.kind === 'success'
+            ? mergeRoomSnapshot(current.data, payload)
+            : payload
+      }));
+      setSubtitleState((current) => {
+        if (isSameSubtitleList(current.data, payload.subtitles)) {
+          return current.kind === 'success'
+            ? current
+            : { kind: 'success', data: current.data };
+        }
+
+        return { kind: 'success', data: payload.subtitles };
+      });
       setSelectedSubtitleId(payload.room.activeSubtitleId);
     });
 
@@ -978,23 +1033,6 @@ export default function App() {
       );
     });
 
-    socket.on('playback:resync', (payload: PlaybackResyncEvent) => {
-      lastAppliedPlaybackSignatureRef.current = getPlaybackSignature(
-        payload.room
-      );
-      setRoomState((current) =>
-        current.kind === 'success'
-          ? {
-              kind: 'success',
-              data: mergeRoomPlayback(current.data, payload.room)
-            }
-          : current
-      );
-      applyPlaybackRoom(payload.room, {
-        mode: payload.mode,
-        driftMs: payload.driftMs
-      });
-    });
 
     socket.on('room:participant-joined', (participant: Participant) => {
       setNotice(`${participant.displayName} joined the room.`);
@@ -1086,38 +1124,6 @@ export default function App() {
     roomToken ?? 'home'
   ]);
 
-  useEffect(() => {
-    if (route.kind !== 'room' || joinState.kind !== 'success') {
-      return;
-    }
-
-    const activeRoomToken = route.token;
-    const timer = window.setInterval(() => {
-      const video = videoRef.current;
-      const socket = socketRef.current;
-
-      if (!video || !socket || socket.disconnected || video.readyState < 2) {
-        return;
-      }
-
-      const payload: PlaybackStateReportPayload = {
-        token: activeRoomToken,
-        participantId: joinState.participant.id,
-        currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
-        playbackState: video.paused ? 'paused' : 'playing',
-        playbackRate: video.playbackRate || 1
-      };
-
-      socket.emit('playback:state-report', payload);
-    }, 4000);
-
-    return () => window.clearInterval(timer);
-  }, [
-    joinState.kind,
-    joinState.kind === 'success' ? joinState.participant.id : 'idle',
-    roomToken ?? 'home',
-    route.kind
-  ]);
 
   const playbackMedia =
     route.kind === 'room'
@@ -1160,7 +1166,11 @@ export default function App() {
   useEffect(() => {
     if (route.kind !== 'room' || joinState.kind !== 'success') {
       clearSoftResyncTimer();
-      suppressPlaybackEventsRef.current = false;
+      suppressedPlaybackEventsRef.current = {
+        play: 0,
+        pause: 0,
+        seek: 0
+      };
       return;
     }
 
@@ -1177,10 +1187,6 @@ export default function App() {
     function emitPlaybackEvent(
       eventName: 'playback:play' | 'playback:pause' | 'playback:seek'
     ) {
-      if (suppressPlaybackEventsRef.current) {
-        return;
-      }
-
       const socket = socketRef.current;
       if (!socket || socket.disconnected) {
         return;
@@ -1196,9 +1202,27 @@ export default function App() {
       });
     }
 
-    const handlePlay = () => emitPlaybackEvent('playback:play');
-    const handlePause = () => emitPlaybackEvent('playback:pause');
-    const handleSeeked = () => emitPlaybackEvent('playback:seek');
+    const handlePlay = () => {
+      if (shouldSuppressPlaybackEvent('play')) {
+        return;
+      }
+
+      emitPlaybackEvent('playback:play');
+    };
+    const handlePause = () => {
+      if (shouldSuppressPlaybackEvent('pause')) {
+        return;
+      }
+
+      emitPlaybackEvent('playback:pause');
+    };
+    const handleSeeked = () => {
+      if (shouldSuppressPlaybackEvent('seek')) {
+        return;
+      }
+
+      emitPlaybackEvent('playback:seek');
+    };
 
     activeVideo.addEventListener('play', handlePlay);
     activeVideo.addEventListener('pause', handlePause);
@@ -1219,9 +1243,6 @@ export default function App() {
   useEffect(
     () => () => {
       clearSoftResyncTimer();
-      if (playbackGuardTimerRef.current) {
-        window.clearTimeout(playbackGuardTimerRef.current);
-      }
     },
     []
   );
@@ -1351,7 +1372,13 @@ export default function App() {
           return;
         }
 
-        const hls = new Hls();
+        const hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          backBufferLength: 90,
+          maxBufferLength: 60,
+          maxMaxBufferLength: 120
+        });
         hls.loadSource(manifestUrl);
         hls.attachMedia(video);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
@@ -1361,6 +1388,20 @@ export default function App() {
         hls.on(Hls.Events.ERROR, (_eventName: unknown, rawData: unknown) => {
           const data = rawData as HlsErrorData;
           if (data.fatal) {
+            if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+              setPlayerState('buffering');
+              setPlayerMessage('Stream interrupted. Retrying the next segment...');
+              hls.startLoad();
+              return;
+            }
+
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              setPlayerState('buffering');
+              setPlayerMessage('Recovering from a media decode issue...');
+              hls.recoverMediaError();
+              return;
+            }
+
             setPlayerState('error');
             setPlayerMessage(
               data.details
@@ -1393,7 +1434,13 @@ export default function App() {
       cleanup();
       teardownListeners();
     };
-  }, [canPlayMedia, playbackMedia, route.kind]);
+  }, [
+    canPlayMedia,
+    route.kind,
+    playbackMedia?.id ?? 'idle',
+    playbackMedia?.status ?? 'missing',
+    playbackMedia?.hlsManifestPath ?? 'none'
+  ]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1500,7 +1547,13 @@ export default function App() {
         nextDisplayName
       );
       setJoinState({ kind: 'success', participant: payload.participant });
-      setRoomState({ kind: 'success', data: payload });
+      setRoomState((current) => ({
+        kind: 'success',
+        data:
+          current.kind === 'success'
+            ? mergeRoomSnapshot(current.data, payload)
+            : payload
+      }));
       setSubtitleState({ kind: 'success', data: payload.subtitles });
       setSelectedSubtitleId(payload.room.activeSubtitleId);
       setNotice(`Joined as ${payload.participant.displayName}.`);
@@ -1622,13 +1675,13 @@ export default function App() {
             Phase 5
           </p>
           <h1 className="mt-4 font-serif text-4xl font-semibold leading-tight md:text-6xl">
-            Room playback is now authoritative on the server with synchronized
-            play, pause, seek, and drift correction.
+            Room playback now favors smooth watching with shared play,
+            pause, and seek controls.
           </h1>
           <p className="mt-4 max-w-3xl text-lg text-slate-600">
             Use <span className="font-mono">/room/&lt;token&gt;</span> to join a
-            private session, recover playback state after reconnects, and keep
-            both viewers aligned through realtime sync.
+            private session, recover the current room state after reconnects,
+            and keep control changes shared without aggressive drift fixes.
           </p>
         </section>
 
@@ -1806,6 +1859,7 @@ export default function App() {
                     className="aspect-video w-full rounded-[1.25rem] bg-black object-contain"
                     controls
                     crossOrigin="anonymous"
+                    preload="auto"
                     ref={videoRef}
                   />
                 </div>
@@ -2154,3 +2208,4 @@ export default function App() {
     </main>
   );
 }
+
