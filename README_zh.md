@@ -1,6 +1,6 @@
 # VideoTogether
 
-VideoTogether 是一个面向两人私密观影场景的桌面优先项目。
+VideoTogether 是一个面向局域网内两人私密观影场景的视频同步应用。
 
 主机端在本机导入视频文件，使用 `ffprobe` / `ffmpeg` 处理成 HLS 流，创建私密房间链接，然后把链接发给另一位观看者。观看者不需要安装桌面端，只需要用浏览器打开房间链接即可。
 
@@ -21,11 +21,6 @@ VideoTogether 是一个面向两人私密观影场景的桌面优先项目。
 - 参与者在线状态与重连恢复
 - Tauri 桌面端主机控制面板
 - 一键启动主机流程
-- 桌面端安装包构建
-
-当前未实现：
-
-- WebRTC 音视频通话
 
 ## 项目结构
 
@@ -87,7 +82,6 @@ infra/
 - `LAN_IP`
   - 桌面端生成局域网房间链接时使用的固定 IPv4
   - 请把它设置成你明确要暴露的地址，比如 ZeroTier IPv4
-  - 不使用自动探测
 - `FFMPEG_PATH`
   - `ffmpeg` 可执行文件路径
 - `FFPROBE_PATH`
@@ -200,11 +194,6 @@ npm run host:start
 - 挂载本地 `storage/*` 目录
 - 保持桌面端仍在宿主机运行
 
-当 `USE_DOCKER=false` 时：
-
-- `host:start` 不会调用 Docker
-- `host:stop` 也不会触碰 Docker
-
 ## 本地开发模式
 
 如果你想分别调试 web、server、desktop：
@@ -220,23 +209,6 @@ npm run dev:desktop
 - API: `http://localhost:3000`
 - Web: `http://localhost:5173`
 - Desktop dev shell: `npm run dev:desktop`
-
-## 桌面端打包
-
-如果你要构建桌面端安装包：
-
-```bash
-npm run desktop:package
-```
-
-当前会生成：
-
-- MSI
-- NSIS 安装程序
-
-打包输出目录：
-
-- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoTogether/apps/desktop/src-tauri/target/release/bundle)
 
 ## 常用命令
 
@@ -293,3 +265,6 @@ npm run desktop:package
 - `GET /`
 - `GET /room/:token`
 
+## 使用建议
+
+可以使用 [zerotier](https://www.zerotier.com/) 来实现不在同一个物理局域网内的视频播放

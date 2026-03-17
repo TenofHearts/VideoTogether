@@ -1,6 +1,6 @@
 # VideoTogether
 
-VideoTogether is a desktop-first private movie sharing project designed for two people.
+VideoTogether is a private movie sharing project designed for two people in the same LAN.
 
 The host imports a local video file, processes it into HLS with `ffprobe` and `ffmpeg`, creates a private room link, and shares that link with a second viewer. The viewer does not need the desktop app and can join directly from a browser.
 
@@ -21,11 +21,6 @@ Implemented today:
 - Participant presence and reconnect recovery
 - Tauri desktop host dashboard
 - One-command host startup flow
-- Desktop installer packaging
-
-Not implemented yet:
-
-- WebRTC voice/video calling
 
 ## Repository Layout
 
@@ -87,7 +82,6 @@ Important variables:
 - `LAN_IP`
   - fixed IPv4 used by the desktop app when generating LAN room URLs
   - set this to the exact IPv4 you want to expose, such as your ZeroTier IPv4
-  - no automatic detection is used
 - `FFMPEG_PATH`
   - path to the `ffmpeg` executable
 - `FFPROBE_PATH`
@@ -200,11 +194,6 @@ In this mode the script will:
 - mount the local `storage/*` directories
 - still run the desktop app on the host machine
 
-When `USE_DOCKER=false`:
-
-- `host:start` does not call Docker
-- `host:stop` does not touch Docker either
-
 ## Local Development Mode
 
 If you want to work with separate dev processes for web, server, and desktop:
@@ -220,23 +209,6 @@ Default development endpoints:
 - API: `http://localhost:3000`
 - Web: `http://localhost:5173`
 - Desktop dev shell: `npm run dev:desktop`
-
-## Desktop Packaging
-
-To build desktop installers:
-
-```bash
-npm run desktop:package
-```
-
-Current bundle outputs include:
-
-- MSI
-- NSIS installer
-
-Bundle output directory:
-
-- [apps/desktop/src-tauri/target/release/bundle](/e:/Programing/VideoTogether/apps/desktop/src-tauri/target/release/bundle)
 
 ## Common Commands
 
@@ -292,3 +264,7 @@ Static playback assets:
 - `GET /subtitles/:subtitleId.vtt`
 - `GET /`
 - `GET /room/:token`
+
+## Pro Tip
+
+To share video with people not within the same physical LAN, you can use projects like [zerotier](https://www.zerotier.com/)
