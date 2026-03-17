@@ -7,6 +7,36 @@ export const serviceHealthSchema = z.object({
   uptimeSeconds: z.number().nonnegative()
 });
 
+export const cleanupRunSummarySchema = z.object({
+  startedAt: z.string().datetime(),
+  finishedAt: z.string().datetime(),
+  expiredRoomsClosed: z.number().int().nonnegative(),
+  idleRoomsClosed: z.number().int().nonnegative(),
+  hlsDirectoriesRemoved: z.number().int().nonnegative(),
+  subtitleFilesRemoved: z.number().int().nonnegative(),
+  mediaEvicted: z.number().int().nonnegative(),
+  warnings: z.array(z.string())
+});
+
+export const cleanupStatusSchema = z.object({
+  enabled: z.boolean(),
+  intervalMinutes: z.number().positive(),
+  idleRoomTtlMinutes: z.number().positive(),
+  hlsRetentionHours: z.number().positive(),
+  lastRun: cleanupRunSummarySchema.nullable()
+});
+
+export const systemDiagnosticsSchema = z.object({
+  totalRooms: z.number().int().nonnegative(),
+  activeRooms: z.number().int().nonnegative(),
+  totalParticipants: z.number().int().nonnegative(),
+  connectedParticipants: z.number().int().nonnegative(),
+  totalMedia: z.number().int().nonnegative(),
+  readyMedia: z.number().int().nonnegative(),
+  totalSubtitles: z.number().int().nonnegative(),
+  activeProcessingJobs: z.number().int().nonnegative()
+});
+
 export const playbackStateSchema = z.enum(['paused', 'playing']);
 
 export const playbackResyncModeSchema = z.enum(['soft', 'hard']);
@@ -165,7 +195,9 @@ export const systemStatusSchema = z.object({
     path: z.string().min(1),
     status: z.enum(['ready', 'disabled']),
     detail: z.string().min(1)
-  })
+  }),
+  cleanup: cleanupStatusSchema,
+  diagnostics: systemDiagnosticsSchema
 });
 
 export const desktopStatusSchema = z.object({
@@ -175,3 +207,4 @@ export const desktopStatusSchema = z.object({
   lanWebUrl: z.string().url().nullable(),
   tauri: z.literal('ready')
 });
+

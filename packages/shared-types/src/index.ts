@@ -5,6 +5,36 @@ export type ServiceHealth = {
   uptimeSeconds: number;
 };
 
+export type CleanupRunSummary = {
+  startedAt: string;
+  finishedAt: string;
+  expiredRoomsClosed: number;
+  idleRoomsClosed: number;
+  hlsDirectoriesRemoved: number;
+  subtitleFilesRemoved: number;
+  mediaEvicted: number;
+  warnings: string[];
+};
+
+export type CleanupStatus = {
+  enabled: boolean;
+  intervalMinutes: number;
+  idleRoomTtlMinutes: number;
+  hlsRetentionHours: number;
+  lastRun: CleanupRunSummary | null;
+};
+
+export type SystemDiagnostics = {
+  totalRooms: number;
+  activeRooms: number;
+  totalParticipants: number;
+  connectedParticipants: number;
+  totalMedia: number;
+  readyMedia: number;
+  totalSubtitles: number;
+  activeProcessingJobs: number;
+};
+
 export type PlaybackState = 'paused' | 'playing';
 
 export type PlaybackResyncMode = 'soft' | 'hard';
@@ -166,6 +196,8 @@ export type SystemStatus = {
     status: 'ready' | 'disabled';
     detail: string;
   };
+  cleanup: CleanupStatus;
+  diagnostics: SystemDiagnostics;
 };
 
 export type DesktopStatus = {
@@ -175,3 +207,4 @@ export type DesktopStatus = {
   lanWebUrl: string | null;
   tauri: 'ready';
 };
+

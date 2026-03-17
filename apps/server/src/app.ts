@@ -9,6 +9,7 @@ import { ensureStoragePaths, loadEnv } from './config/env.js';
 import { createDatabase } from './db/database.js';
 import { HttpError } from './lib/errors.js';
 import { isAllowedBrowserOrigin } from './lib/origins.js';
+import { createCleanupService } from './services/cleanup-service.js';
 import { createMediaService } from './services/media-service.js';
 import { createRoomService } from './services/room-service.js';
 import { bootstrapRealtime } from './sockets/bootstrap.js';
@@ -28,6 +29,9 @@ export async function buildApp() {
   const database = createDatabase(env.databasePath);
   const mediaService = createMediaService(database, env);
   const roomService = createRoomService(database, mediaService, env);
+  const cleanupService = createCleanupService(database, env, {
+    getActiveProcessingJobCount: () => mediaService.getActiveProcessingJobCount()
+  });
 
   const app = Fastify({
     logger: true
@@ -56,7 +60,9 @@ export async function buildApp() {
   await registerHealthRoutes(app, {
     env,
     databasePath: database.path,
-    realtime
+    realtime,
+    getCleanupStatus: () => cleanupService.getStatus(),
+    getDiagnostics: () => cleanupService.getDiagnostics()
   });
   await registerRoomRoutes(app, {
     roomService
@@ -68,6 +74,15 @@ export async function buildApp() {
     env,
     mediaService
   });
+
+  const cleanupTimer = setInterval(() => {
+    try {
+      const summary = cleanupService.runNow();
+      app.log.info({ summary }, 'Completed maintenance cleanup pass');
+    } catch (error) {
+      app.log.error(error, 'Maintenance cleanup pass failed');
+    }
+  }, env.cleanup.intervalMinutes * 60 * 1000);
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof HttpError) {
@@ -93,6 +108,7 @@ export async function buildApp() {
   });
 
   app.addHook('onClose', async () => {
+    clearInterval(cleanupTimer);
     database.connection.close();
   });
 

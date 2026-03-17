@@ -1,14 +1,17 @@
 import type { FastifyInstance } from 'fastify';
 
 import type { AppEnv } from '../config/env.js';
-import type { ServiceHealth, SystemStatus } from '../types/models.js';
+import type { ServiceHealth, SystemDiagnostics, SystemStatus } from '../types/models.js';
 
 type RealtimeStatus = SystemStatus['realtime'];
+type CleanupStatus = SystemStatus['cleanup'];
 
 type HealthRouteDependencies = {
   env: AppEnv;
   databasePath: string;
   realtime: RealtimeStatus;
+  getCleanupStatus: () => CleanupStatus;
+  getDiagnostics: () => SystemDiagnostics;
 };
 
 export async function registerHealthRoutes(
@@ -34,8 +37,9 @@ export async function registerHealthRoutes(
         connected: true
       },
       storage: dependencies.env.storage,
-      realtime: dependencies.realtime
+      realtime: dependencies.realtime,
+      cleanup: dependencies.getCleanupStatus(),
+      diagnostics: dependencies.getDiagnostics()
     };
   });
 }
-

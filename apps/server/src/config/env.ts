@@ -42,7 +42,10 @@ const envSchema = z.object({
   SUBTITLE_DIR: z.string().optional(),
   TEMP_DIR: z.string().optional(),
   FFMPEG_PATH: z.string().default('ffmpeg'),
-  FFPROBE_PATH: z.string().default('ffprobe')
+  FFPROBE_PATH: z.string().default('ffprobe'),
+  CLEANUP_INTERVAL_MINUTES: z.coerce.number().positive().default(10),
+  ROOM_IDLE_TTL_MINUTES: z.coerce.number().positive().default(180),
+  HLS_RETENTION_HOURS: z.coerce.number().positive().default(72)
 });
 
 export type AppEnv = ReturnType<typeof loadEnv>;
@@ -81,6 +84,11 @@ export function loadEnv() {
     realtime: {
       transport: 'socket.io' as const,
       path: '/socket.io'
+    },
+    cleanup: {
+      intervalMinutes: parsedEnv.CLEANUP_INTERVAL_MINUTES,
+      idleRoomTtlMinutes: parsedEnv.ROOM_IDLE_TTL_MINUTES,
+      hlsRetentionHours: parsedEnv.HLS_RETENTION_HOURS
     }
   };
 }

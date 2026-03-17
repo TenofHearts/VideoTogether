@@ -347,6 +347,12 @@ select.selectInput {
   padding: 18px;
 }
 
+.participantCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
 .subtitleTitle {
   margin: 0;
 }
@@ -450,10 +456,27 @@ select.selectInput {
   grid-column: 1 / -1;
 }
 
+.participantIdentity {
+  min-width: 0;
+}
+
+.participantName,
+.participantMeta {
+  margin: 0;
+}
+
+.participantTimeline {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
 .participantBadges {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  justify-content: flex-end;
+  flex: none;
 }
 
 .pill {
@@ -505,7 +528,17 @@ select.selectInput {
   .fieldGrid {
     grid-template-columns: 1fr;
   }
+
+  .participantHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .participantBadges {
+    justify-content: flex-start;
+  }
 }
+
 
 
 

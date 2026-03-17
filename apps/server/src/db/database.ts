@@ -14,6 +14,7 @@ const schemaSql = `
     width INTEGER,
     height INTEGER,
     hls_manifest_path TEXT,
+    hls_generated_at TEXT,
     processing_error TEXT,
     status TEXT NOT NULL,
     created_at TEXT NOT NULL
@@ -76,6 +77,7 @@ export function createDatabase(databasePath: string): DatabaseContext {
 
   connection.exec(schemaSql);
   ensureColumnExists(connection, 'media', 'processing_error', 'TEXT');
+  ensureColumnExists(connection, 'media', 'hls_generated_at', 'TEXT');
 
   return {
     connection,

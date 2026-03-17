@@ -27,6 +27,7 @@ type MediaRow = {
   width: number | null;
   height: number | null;
   hls_manifest_path: string | null;
+  hls_generated_at: string | null;
   processing_error: string | null;
   status: Media['status'];
   created_at: string;
@@ -115,6 +116,12 @@ function toProcessingErrorMessage(error: unknown): string {
   }
 
   if (error instanceof Error) {
+    const maybeErrno = error as Error & { code?: string };
+
+    if (maybeErrno.code === 'ENOENT') {
+      return 'FFmpeg or ffprobe could not be started. Check the configured binary paths on the host machine.';
+    }
+
     return error.message;
   }
 
@@ -242,6 +249,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       width,
       height,
       hls_manifest_path,
+      hls_generated_at,
       processing_error,
       status,
       created_at
@@ -261,6 +269,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       width,
       height,
       hls_manifest_path,
+      hls_generated_at,
       processing_error,
       status,
       created_at
@@ -310,10 +319,11 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       width,
       height,
       hls_manifest_path,
+      hls_generated_at,
       processing_error,
       status,
       created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertSubtitleStatement = database.connection.prepare(`
@@ -346,6 +356,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     SET
       status = ?,
       hls_manifest_path = ?,
+      hls_generated_at = ?,
       processing_error = ?
     WHERE id = ?
   `);
@@ -405,7 +416,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       throw new HttpError(404, 'Media not found');
     }
 
-    updateMediaStatusStatement.run('processing', null, null, mediaId);
+    updateMediaStatusStatement.run('processing', null, null, null, mediaId);
 
     try {
       await probeMedia(media);
@@ -455,10 +466,11 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         resolve(outputDirectory, 'master.m3u8')
       ]);
 
-      updateMediaStatusStatement.run('ready', 'master.m3u8', null, mediaId);
+      updateMediaStatusStatement.run('ready', 'master.m3u8', new Date().toISOString(), null, mediaId);
     } catch (error) {
       updateMediaStatusStatement.run(
         'error',
+        null,
         null,
         toProcessingErrorMessage(error),
         mediaId
@@ -470,7 +482,8 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     await runCommand(env.mediaProcessing.ffmpegPath, [
       '-y',
       '-i',
-      sourcePath,      '-f',
+      sourcePath,
+      '-f',
       'webvtt',
       targetPath
     ]);
@@ -541,6 +554,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         mediaId,
         sanitizedFileName,
         storedFilePath,
+        null,
         null,
         null,
         null,
@@ -698,6 +712,10 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       }
     },
 
+    getActiveProcessingJobCount(): number {
+      return activeProcessingJobs.size;
+    },
+
     buildPlayerUrl(mediaId: string, roomToken?: string): string {
       return createPlayerUrl(env.webOrigin, mediaId, roomToken);
     },
@@ -709,8 +727,3 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
 
   return service;
 }
-
-
-
-
-

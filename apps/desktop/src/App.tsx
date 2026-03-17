@@ -8,8 +8,10 @@ import type {
   MediaSubtitlesResponse,
   Participant,
   RoomLookupResponse,
+  ServiceHealth,
   Subtitle,
-  SubtitleOperationResponse
+  SubtitleOperationResponse,
+  SystemStatus
 } from '@videoshare/shared-types';
 
 type ActionState = 'idle' | 'working' | 'error' | 'success';
@@ -20,6 +22,11 @@ type RecentMediaState =
   | { kind: 'success'; data: Media[] };
 
 type StepState = 'complete' | 'active' | 'pending' | 'error';
+
+type DiagnosticsState<T> =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'success'; data: T };
 
 type ProcessingStep = {
   label: string;
@@ -50,7 +57,9 @@ function formatDuration(durationMs: number | null): string {
   const seconds = totalSeconds % 60;
 
   return [hours, minutes, seconds]
-    .map((value, index) => (index === 0 ? String(value) : String(value).padStart(2, '0')))
+    .map((value, index) =>
+      index === 0 ? String(value) : String(value).padStart(2, '0')
+    )
     .join(':');
 }
 
@@ -88,10 +97,27 @@ function buildPlayerUrl(baseUrl: string, mediaId: string): string {
 
 function buildRoomPlayerUrl(baseUrl: string, token: string): string {
   const url = new URL(baseUrl);
-  const normalizedPath = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+  const normalizedPath = url.pathname.endsWith('/')
+    ? url.pathname
+    : `${url.pathname}/`;
   url.pathname = `${normalizedPath}room/${token}`;
   url.search = '';
   url.hash = '';
+  return url.toString();
+}
+function buildParticipantRoomUrl(
+  baseUrl: string,
+  token: string,
+  participantId: string,
+  displayName?: string | null
+): string {
+  const url = new URL(buildRoomPlayerUrl(baseUrl, token));
+  url.searchParams.set('participantId', participantId);
+
+  if (displayName?.trim()) {
+    url.searchParams.set('displayName', displayName.trim());
+  }
+
   return url.toString();
 }
 
@@ -131,7 +157,8 @@ function getProcessingSteps(media: Media | null): ProcessingStep[] {
         },
         {
           label: 'Ready for rooms',
-          description: 'Share URLs become useful after HLS generation finishes.',
+          description:
+            'Share URLs become useful after HLS generation finishes.',
           state: 'pending'
         }
       ];
@@ -144,12 +171,14 @@ function getProcessingSteps(media: Media | null): ProcessingStep[] {
         },
         {
           label: 'HLS pipeline running',
-          description: 'The server is probing metadata and writing playlists and segments.',
+          description:
+            'The server is probing metadata and writing playlists and segments.',
           state: 'active'
         },
         {
           label: 'Ready for rooms',
-          description: 'Room creation stays enabled after processing completes.',
+          description:
+            'Room creation stays enabled after processing completes.',
           state: 'pending'
         }
       ];
@@ -167,7 +196,8 @@ function getProcessingSteps(media: Media | null): ProcessingStep[] {
         },
         {
           label: 'Ready for rooms',
-          description: 'You can create, share, and manage a room from this dashboard.',
+          description:
+            'You can create, share, and manage a room from this dashboard.',
           state: 'complete'
         }
       ];
@@ -180,7 +210,8 @@ function getProcessingSteps(media: Media | null): ProcessingStep[] {
         },
         {
           label: 'Processing failed',
-          description: media.processingError ?? 'The HLS pipeline stopped with an error.',
+          description:
+            media.processingError ?? 'The HLS pipeline stopped with an error.',
           state: 'error'
         },
         {
@@ -199,32 +230,55 @@ function getParticipantRoleLabel(participant: Participant): string {
 }
 
 function getParticipantConnectionLabel(participant: Participant): string {
-  return participant.connectionState === 'connected' ? 'Connected' : 'Disconnected';
+  return participant.connectionState === 'connected'
+    ? 'Connected'
+    : 'Disconnected';
 }
 
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
-  const payload = (await response.json().catch(() => null)) as
-    | { message?: string; detail?: string }
-    | null;
+async function readErrorMessage(
+  response: Response,
+  fallback: string
+): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as {
+    message?: string;
+    detail?: string;
+  } | null;
 
-  return payload?.message ?? payload?.detail ?? `${fallback} (${response.status})`;
+  return (
+    payload?.message ?? payload?.detail ?? `${fallback} (${response.status})`
+  );
 }
 
 export default function App() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const subtitleInputRef = useRef<HTMLInputElement | null>(null);
   const [status, setStatus] = useState<DesktopStatus | null>(null);
+  const [health, setHealth] = useState<DiagnosticsState<ServiceHealth>>({
+    kind: 'loading'
+  });
+  const [systemStatus, setSystemStatus] = useState<
+    DiagnosticsState<SystemStatus>
+  >({ kind: 'loading' });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedSubtitleFile, setSelectedSubtitleFile] = useState<File | null>(null);
-  const [selectedRoomSubtitleId, setSelectedRoomSubtitleId] = useState<string | null>(null);
+  const [selectedSubtitleFile, setSelectedSubtitleFile] = useState<File | null>(
+    null
+  );
+  const [selectedRoomSubtitleId, setSelectedRoomSubtitleId] = useState<
+    string | null
+  >(null);
   const [media, setMedia] = useState<Media | null>(null);
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [room, setRoom] = useState<RoomLookupResponse | null>(null);
-  const [recentMedia, setRecentMedia] = useState<RecentMediaState>({ kind: 'loading', data: [] });
+  const [recentMedia, setRecentMedia] = useState<RecentMediaState>({
+    kind: 'loading',
+    data: []
+  });
   const [uploadState, setUploadState] = useState<ActionState>('idle');
-  const [subtitleUploadState, setSubtitleUploadState] = useState<ActionState>('idle');
+  const [subtitleUploadState, setSubtitleUploadState] =
+    useState<ActionState>('idle');
   const [roomState, setRoomState] = useState<ActionState>('idle');
-  const [roomSubtitleState, setRoomSubtitleState] = useState<ActionState>('idle');
+  const [roomSubtitleState, setRoomSubtitleState] =
+    useState<ActionState>('idle');
   const [closeRoomState, setCloseRoomState] = useState<ActionState>('idle');
   const [deleteState, setDeleteState] = useState<ActionState>('idle');
   const [deleteConfirmArmed, setDeleteConfirmArmed] = useState(false);
@@ -235,18 +289,51 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const hasActiveRoom = room?.room.status === 'active';
-  const roomPlayerUrl = room && status ? buildRoomPlayerUrl(status.webUrl, room.room.token) : null;
-  const lanRoomPlayerUrl = room && status?.lanWebUrl
-    ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
-    : null;
-  const playerUrl = media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
-  const lanPlayerUrl = media && status?.lanWebUrl
-    ? buildPlayerUrl(status.lanWebUrl, media.id)
-    : null;
-  const selectedSubtitle = subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ?? null;
-  const activeRoomSubtitle = room?.subtitles.find((subtitle) => subtitle.id === room.room.activeSubtitleId) ?? null;
+  const roomPlayerUrl =
+    room && status ? buildRoomPlayerUrl(status.webUrl, room.room.token) : null;
+  const lanRoomPlayerUrl =
+    room && status?.lanWebUrl
+      ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
+      : null;
+  const hostParticipant =
+    room?.participants.find(
+      (participant) => participant.id === room.room.hostClientId
+    ) ?? null;
+  const hostRoomPlayerUrl =
+    room && status && hostParticipant
+      ? buildParticipantRoomUrl(
+          status.webUrl,
+          room.room.token,
+          hostParticipant.id,
+          hostParticipant.displayName
+        )
+      : null;
+  const lanHostRoomPlayerUrl =
+    room && status?.lanWebUrl && hostParticipant
+      ? buildParticipantRoomUrl(
+          status.lanWebUrl,
+          room.room.token,
+          hostParticipant.id,
+          hostParticipant.displayName
+        )
+      : null;
+  const playerUrl =
+    media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
+  const lanPlayerUrl =
+    media && status?.lanWebUrl
+      ? buildPlayerUrl(status.lanWebUrl, media.id)
+      : null;
+  const selectedSubtitle =
+    subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ??
+    null;
+  const activeRoomSubtitle =
+    room?.subtitles.find(
+      (subtitle) => subtitle.id === room.room.activeSubtitleId
+    ) ?? null;
   const participants = room?.participants ?? [];
-  const guestCount = participants.filter((participant) => participant.role === 'guest').length;
+  const guestCount = participants.filter(
+    (participant) => participant.role === 'guest'
+  ).length;
 
   async function refreshRecentMedia() {
     if (!status) {
@@ -266,8 +353,50 @@ export default function App() {
       setRecentMedia((current) => ({
         kind: 'error',
         data: current.data,
-        message: reason instanceof Error ? reason.message : 'Failed to load recent media'
+        message:
+          reason instanceof Error
+            ? reason.message
+            : 'Failed to load recent media'
       }));
+    }
+  }
+
+  async function refreshDiagnostics() {
+    if (!status) {
+      return;
+    }
+
+    try {
+      const [healthResponse, systemResponse] = await Promise.all([
+        fetch(`${status.apiBaseUrl}/health`),
+        fetch(`${status.apiBaseUrl}/api/system/status`)
+      ]);
+
+      if (!healthResponse.ok) {
+        throw new Error(
+          await readErrorMessage(healthResponse, 'Health check failed')
+        );
+      }
+
+      if (!systemResponse.ok) {
+        throw new Error(
+          await readErrorMessage(systemResponse, 'System status failed')
+        );
+      }
+
+      setHealth({
+        kind: 'success',
+        data: (await healthResponse.json()) as ServiceHealth
+      });
+      setSystemStatus({
+        kind: 'success',
+        data: (await systemResponse.json()) as SystemStatus
+      });
+    } catch (reason) {
+      const message =
+        reason instanceof Error ? reason.message : 'Diagnostics request failed';
+      setHealth({ kind: 'error', message });
+      setSystemStatus({ kind: 'error', message });
     }
   }
 
@@ -290,10 +419,14 @@ export default function App() {
       throw new Error('Desktop status is not ready');
     }
 
-    const response = await fetch(`${status.apiBaseUrl}/api/media/${mediaId}/subtitles`);
+    const response = await fetch(
+      `${status.apiBaseUrl}/api/media/${mediaId}/subtitles`
+    );
 
     if (!response.ok) {
-      throw new Error(await readErrorMessage(response, 'Subtitle lookup failed'));
+      throw new Error(
+        await readErrorMessage(response, 'Subtitle lookup failed')
+      );
     }
 
     const payload = (await response.json()) as MediaSubtitlesResponse;
@@ -363,7 +496,9 @@ export default function App() {
         const response = await fetch(`${apiBaseUrl}/api/media`);
 
         if (!response.ok) {
-          throw new Error(await readErrorMessage(response, 'Media list failed'));
+          throw new Error(
+            await readErrorMessage(response, 'Media list failed')
+          );
         }
 
         const payload = (await response.json()) as MediaListResponse;
@@ -376,7 +511,10 @@ export default function App() {
           setRecentMedia((current) => ({
             kind: 'error',
             data: current.data,
-            message: reason instanceof Error ? reason.message : 'Failed to load recent media'
+            message:
+              reason instanceof Error
+                ? reason.message
+                : 'Failed to load recent media'
           }));
         }
       }
@@ -394,7 +532,68 @@ export default function App() {
   }, [status]);
 
   useEffect(() => {
-    if (!status || !media || (media.status !== 'pending' && media.status !== 'processing')) {
+    if (!status) {
+      return;
+    }
+
+    let cancelled = false;
+    const apiBaseUrl = status.apiBaseUrl;
+
+    async function loadDiagnostics() {
+      try {
+        const [healthResponse, systemResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/health`),
+          fetch(`${apiBaseUrl}/api/system/status`)
+        ]);
+
+        if (!healthResponse.ok) {
+          throw new Error(
+            await readErrorMessage(healthResponse, 'Health check failed')
+          );
+        }
+
+        if (!systemResponse.ok) {
+          throw new Error(
+            await readErrorMessage(systemResponse, 'System status failed')
+          );
+        }
+
+        const nextHealth = (await healthResponse.json()) as ServiceHealth;
+        const nextSystemStatus = (await systemResponse.json()) as SystemStatus;
+
+        if (!cancelled) {
+          setHealth({ kind: 'success', data: nextHealth });
+          setSystemStatus({ kind: 'success', data: nextSystemStatus });
+        }
+      } catch (reason) {
+        if (!cancelled) {
+          const message =
+            reason instanceof Error
+              ? reason.message
+              : 'Diagnostics request failed';
+          setHealth({ kind: 'error', message });
+          setSystemStatus({ kind: 'error', message });
+        }
+      }
+    }
+
+    void loadDiagnostics();
+    const timer = window.setInterval(() => {
+      void loadDiagnostics();
+    }, 20000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [status]);
+
+  useEffect(() => {
+    if (
+      !status ||
+      !media ||
+      (media.status !== 'pending' && media.status !== 'processing')
+    ) {
       return;
     }
 
@@ -410,7 +609,9 @@ export default function App() {
 
           if (nextMedia.status === 'ready') {
             setUploadState('success');
-            setMessage('HLS output is ready. The movie can now be used for a room.');
+            setMessage(
+              'HLS output is ready. The movie can now be used for a room.'
+            );
             void refreshRecentMedia();
           }
 
@@ -423,7 +624,11 @@ export default function App() {
         .catch((reason) => {
           if (!cancelled) {
             setUploadState('error');
-            setError(reason instanceof Error ? reason.message : 'Failed to refresh media status');
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : 'Failed to refresh media status'
+            );
           }
         });
     }, 2500);
@@ -448,11 +653,17 @@ export default function App() {
         }
 
         setSubtitles(nextSubtitles);
-        setSelectedRoomSubtitleId((current) => current ?? nextSubtitles[0]?.id ?? null);
+        setSelectedRoomSubtitleId(
+          (current) => current ?? nextSubtitles[0]?.id ?? null
+        );
       })
       .catch((reason) => {
         if (!cancelled) {
-          setError(reason instanceof Error ? reason.message : 'Failed to load subtitles');
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : 'Failed to load subtitles'
+          );
         }
       });
 
@@ -487,7 +698,11 @@ export default function App() {
         })
         .catch((reason) => {
           if (!cancelled) {
-            setError(reason instanceof Error ? reason.message : 'Failed to refresh room state');
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : 'Failed to refresh room state'
+            );
           }
         });
     }, 5000);
@@ -523,11 +738,19 @@ export default function App() {
       setSelectedFile(null);
       setProcessingQueued(false);
       setUploadState(payload.status === 'error' ? 'error' : 'success');
-      setRoom((currentRoom) => (currentRoom?.room.activeMediaId === payload.id ? currentRoom : null));
-      setMessage('Media loaded. You can manage subtitles or open a room from this dashboard.');
+      setRoom((currentRoom) =>
+        currentRoom?.room.activeMediaId === payload.id ? currentRoom : null
+      );
+      setMessage(
+        'Media loaded. You can manage subtitles or open a room from this dashboard.'
+      );
     } catch (reason) {
       setUploadState('error');
-      setError(reason instanceof Error ? reason.message : 'Failed to load existing media');
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Failed to load existing media'
+      );
       setMessage(null);
     }
   }
@@ -597,25 +820,34 @@ export default function App() {
     setMessage('Uploading subtitle and converting it to WebVTT when needed...');
 
     try {
-      const response = await fetch(`${status.apiBaseUrl}/api/media/${media.id}/subtitles`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'X-File-Name': encodeURIComponent(selectedSubtitleFile.name)
-        },
-        body: selectedSubtitleFile
-      });
+      const response = await fetch(
+        `${status.apiBaseUrl}/api/media/${media.id}/subtitles`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': encodeURIComponent(selectedSubtitleFile.name)
+          },
+          body: selectedSubtitleFile
+        }
+      );
 
       if (!response.ok) {
-        throw new Error(await readErrorMessage(response, 'Subtitle upload failed'));
+        throw new Error(
+          await readErrorMessage(response, 'Subtitle upload failed')
+        );
       }
 
       const payload = (await response.json()) as SubtitleOperationResponse;
       setSubtitles((current) => {
-        const next = [...current.filter((subtitle) => subtitle.id !== payload.subtitle.id), payload.subtitle];
+        const next = [
+          ...current.filter((subtitle) => subtitle.id !== payload.subtitle.id),
+          payload.subtitle
+        ];
         next.sort(
           (left, right) =>
-            Number(right.isDefault) - Number(left.isDefault) || left.label.localeCompare(right.label)
+            Number(right.isDefault) - Number(left.isDefault) ||
+            left.label.localeCompare(right.label)
         );
         return next;
       });
@@ -630,7 +862,9 @@ export default function App() {
       setMessage(`Subtitle ready: ${payload.subtitle.label}.`);
     } catch (reason) {
       setSubtitleUploadState('error');
-      setError(reason instanceof Error ? reason.message : 'Subtitle upload failed');
+      setError(
+        reason instanceof Error ? reason.message : 'Subtitle upload failed'
+      );
     }
   }
 
@@ -651,10 +885,11 @@ export default function App() {
     setMessage('Creating a shareable room for the selected movie...');
 
     try {
-      const defaultSubtitle = subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId)
-        ?? subtitles.find((subtitle) => subtitle.isDefault)
-        ?? subtitles[0]
-        ?? null;
+      const defaultSubtitle =
+        subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ??
+        subtitles.find((subtitle) => subtitle.isDefault) ??
+        subtitles[0] ??
+        null;
       const response = await fetch(`${status.apiBaseUrl}/api/rooms`, {
         method: 'POST',
         headers: {
@@ -665,24 +900,32 @@ export default function App() {
           expiresAt:
             roomExpiryHours === 'never'
               ? null
-              : new Date(Date.now() + Number(roomExpiryHours) * 60 * 60 * 1000).toISOString(),
+              : new Date(
+                  Date.now() + Number(roomExpiryHours) * 60 * 60 * 1000
+                ).toISOString(),
           activeMediaId: media.id,
           activeSubtitleId: defaultSubtitle?.id ?? null
         })
       });
 
       if (!response.ok) {
-        throw new Error(await readErrorMessage(response, 'Room creation failed'));
+        throw new Error(
+          await readErrorMessage(response, 'Room creation failed')
+        );
       }
 
       const payload = (await response.json()) as RoomLookupResponse;
       setRoom(payload);
       setRoomState('success');
       setSelectedRoomSubtitleId(payload.room.activeSubtitleId);
-      setMessage('Room created. Copy the secret URL from the share panel.');
+      setMessage(
+        'Room created. Copy the guest or host room URL from the share panel.'
+      );
     } catch (reason) {
       setRoomState('error');
-      setError(reason instanceof Error ? reason.message : 'Room creation failed');
+      setError(
+        reason instanceof Error ? reason.message : 'Room creation failed'
+      );
     }
   }
 
@@ -696,18 +939,23 @@ export default function App() {
     setMessage('Updating the room subtitle selection...');
 
     try {
-      const response = await fetch(`${status.apiBaseUrl}/api/rooms/${room.room.token}/subtitle`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          activeSubtitleId: selectedRoomSubtitleId
-        })
-      });
+      const response = await fetch(
+        `${status.apiBaseUrl}/api/rooms/${room.room.token}/subtitle`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            activeSubtitleId: selectedRoomSubtitleId
+          })
+        }
+      );
 
       if (!response.ok) {
-        throw new Error(await readErrorMessage(response, 'Subtitle update failed'));
+        throw new Error(
+          await readErrorMessage(response, 'Subtitle update failed')
+        );
       }
 
       const payload = (await response.json()) as RoomLookupResponse;
@@ -716,7 +964,9 @@ export default function App() {
       setMessage('Room subtitle selection updated.');
     } catch (reason) {
       setRoomSubtitleState('error');
-      setError(reason instanceof Error ? reason.message : 'Subtitle update failed');
+      setError(
+        reason instanceof Error ? reason.message : 'Subtitle update failed'
+      );
     }
   }
 
@@ -730,9 +980,12 @@ export default function App() {
     setMessage('Closing the active room...');
 
     try {
-      const response = await fetch(`${status.apiBaseUrl}/api/rooms/${room.room.token}/close`, {
-        method: 'POST'
-      });
+      const response = await fetch(
+        `${status.apiBaseUrl}/api/rooms/${room.room.token}/close`,
+        {
+          method: 'POST'
+        }
+      );
 
       if (!response.ok) {
         throw new Error(await readErrorMessage(response, 'Room close failed'));
@@ -764,9 +1017,12 @@ export default function App() {
     setMessage('Requesting a new processing attempt...');
 
     try {
-      const response = await fetch(`${status.apiBaseUrl}/api/media/${media.id}/process`, {
-        method: 'POST'
-      });
+      const response = await fetch(
+        `${status.apiBaseUrl}/api/media/${media.id}/process`,
+        {
+          method: 'POST'
+        }
+      );
 
       if (!response.ok) {
         throw new Error(await readErrorMessage(response, 'Retry failed'));
@@ -810,7 +1066,9 @@ export default function App() {
 
     if (!deleteConfirmArmed) {
       setDeleteConfirmArmed(true);
-      setMessage(`Click delete again to remove ${media.originalFileName} and all generated playback files.`);
+      setMessage(
+        `Click delete again to remove ${media.originalFileName} and all generated playback files.`
+      );
       return;
     }
 
@@ -820,9 +1078,12 @@ export default function App() {
     setMessage('Deleting media, subtitles, and generated playback files...');
 
     try {
-      const response = await fetch(`${status.apiBaseUrl}/api/media/${media.id}`, {
-        method: 'DELETE'
-      });
+      const response = await fetch(
+        `${status.apiBaseUrl}/api/media/${media.id}`,
+        {
+          method: 'DELETE'
+        }
+      );
 
       if (!response.ok) {
         throw new Error(await readErrorMessage(response, 'Delete failed'));
@@ -857,12 +1118,17 @@ export default function App() {
             <p className="eyebrow">Phase 6 Host Dashboard</p>
             <h1>Manage the full host workflow from Tauri.</h1>
             <p className="copy">
-              Import or reuse a movie, watch the HLS pipeline state, configure subtitles,
-              create a secret room, and monitor viewer presence without manual API calls.
+              Import or reuse a movie, watch the HLS pipeline state, configure
+              subtitles, create a secret room, and monitor viewer presence
+              without manual API calls.
             </p>
             <div className="heroActions">
               {room?.shareUrl && (
-                <button className="primaryButton" onClick={() => void copyText(room.shareUrl)} type="button">
+                <button
+                  className="primaryButton"
+                  onClick={() => void copyText(room.shareUrl)}
+                  type="button"
+                >
                   Copy secret room URL
                 </button>
               )}
@@ -875,7 +1141,9 @@ export default function App() {
                   }}
                   type="button"
                 >
-                  {closeRoomState === 'working' ? 'Closing room...' : 'Close current room'}
+                  {closeRoomState === 'working'
+                    ? 'Closing room...'
+                    : 'Close current room'}
                 </button>
               )}
             </div>
@@ -889,7 +1157,9 @@ export default function App() {
               </div>
               <div className="statusCard">
                 <span className="statusLabel">Selected movie</span>
-                <strong>{media?.originalFileName ?? 'No media selected'}</strong>
+                <strong>
+                  {media?.originalFileName ?? 'No media selected'}
+                </strong>
               </div>
               <div className="statusCard">
                 <span className="statusLabel">Room status</span>
@@ -926,18 +1196,30 @@ export default function App() {
                   <p className="sectionEyebrow">Media library</p>
                   <h2>Reuse previous uploads</h2>
                 </div>
-                <button className="ghostButton" onClick={() => void refreshRecentMedia()} type="button">
+                <button
+                  className="ghostButton"
+                  onClick={() => void refreshRecentMedia()}
+                  type="button"
+                >
                   Refresh list
                 </button>
               </div>
 
               <p className="sectionCopy">
-                Pick an existing movie from the server when you want to open a new session
-                without re-uploading the video.
+                Pick an existing movie from the server when you want to open a
+                new session without re-uploading the video.
               </p>
 
-              {recentMedia.kind === 'loading' && <div className="emptyState">Loading recent media from the server...</div>}
-              {recentMedia.kind === 'error' && <div className="emptyState errorState">{recentMedia.message}</div>}
+              {recentMedia.kind === 'loading' && (
+                <div className="emptyState">
+                  Loading recent media from the server...
+                </div>
+              )}
+              {recentMedia.kind === 'error' && (
+                <div className="emptyState errorState">
+                  {recentMedia.message}
+                </div>
+              )}
 
               {recentMedia.data.length > 0 && (
                 <div className="mediaQueue">
@@ -951,21 +1233,31 @@ export default function App() {
                       type="button"
                     >
                       <div className="mediaQueueHeader">
-                        <p className="mediaQueueTitle">{item.originalFileName}</p>
-                        <span className={`mediaQueueBadge ${item.status}`}>{getStatusText(item.status)}</span>
+                        <p className="mediaQueueTitle">
+                          {item.originalFileName}
+                        </p>
+                        <span className={`mediaQueueBadge ${item.status}`}>
+                          {getStatusText(item.status)}
+                        </span>
                       </div>
-                      <p className="mediaQueueMeta">Imported {formatDateTime(item.createdAt)}</p>
-                      <p className="mediaQueueMeta">Duration {formatDuration(item.durationMs)}</p>
+                      <p className="mediaQueueMeta">
+                        Imported {formatDateTime(item.createdAt)}
+                      </p>
+                      <p className="mediaQueueMeta">
+                        Duration {formatDuration(item.durationMs)}
+                      </p>
                     </button>
                   ))}
                 </div>
               )}
 
-              {recentMedia.kind === 'success' && recentMedia.data.length === 0 && (
-                <div className="emptyState">
-                  No previous uploads yet. Import a movie below to start the host workflow.
-                </div>
-              )}
+              {recentMedia.kind === 'success' &&
+                recentMedia.data.length === 0 && (
+                  <div className="emptyState">
+                    No previous uploads yet. Import a movie below to start the
+                    host workflow.
+                  </div>
+                )}
             </section>
 
             <section className="surfacePanel">
@@ -976,7 +1268,8 @@ export default function App() {
                 </div>
               </div>
               <p className="sectionCopy">
-                The selected file is uploaded to the local server and processed into HLS for browser playback.
+                The selected file is uploaded to the local server and processed
+                into HLS for browser playback.
               </p>
 
               <div className="actionsRow">
@@ -987,7 +1280,9 @@ export default function App() {
                     const nextFile = event.target.files?.[0] ?? null;
                     setSelectedFile(nextFile);
                     setError(null);
-                    setMessage(nextFile ? 'Movie selected and ready to upload.' : null);
+                    setMessage(
+                      nextFile ? 'Movie selected and ready to upload.' : null
+                    );
                   }}
                   ref={fileInputRef}
                   type="file"
@@ -1002,18 +1297,27 @@ export default function App() {
                 </button>
                 <button
                   className="secondaryButton"
-                  disabled={!selectedFile || !status || uploadState === 'working' || hasActiveRoom}
+                  disabled={
+                    !selectedFile ||
+                    !status ||
+                    uploadState === 'working' ||
+                    hasActiveRoom
+                  }
                   onClick={() => {
                     void uploadSelectedFile();
                   }}
                   type="button"
                 >
-                  {uploadState === 'working' ? 'Uploading...' : 'Upload and process'}
+                  {uploadState === 'working'
+                    ? 'Uploading...'
+                    : 'Upload and process'}
                 </button>
               </div>
 
               <div className="infoCard">
-                <p className="infoTitle">{selectedFile?.name ?? 'No file selected yet'}</p>
+                <p className="infoTitle">
+                  {selectedFile?.name ?? 'No file selected yet'}
+                </p>
                 <p className="infoMeta">
                   {selectedFile
                     ? `${formatFileSize(selectedFile.size)}`
@@ -1021,7 +1325,8 @@ export default function App() {
                 </p>
                 {hasActiveRoom && (
                   <p className="infoMeta warningText">
-                    The current room is still active. Close it before switching to a new movie.
+                    The current room is still active. Close it before switching
+                    to a new movie.
                   </p>
                 )}
               </div>
@@ -1033,11 +1338,16 @@ export default function App() {
                   <p className="sectionEyebrow">Current movie</p>
                   <h2>{media?.originalFileName ?? 'Nothing selected yet'}</h2>
                 </div>
-                {media && <span className={`mediaQueueBadge ${media.status}`}>{getStatusText(media.status)}</span>}
+                {media && (
+                  <span className={`mediaQueueBadge ${media.status}`}>
+                    {getStatusText(media.status)}
+                  </span>
+                )}
               </div>
 
               <p className="sectionCopy">
-                This panel keeps the selected movie, processing state, and host-only actions together.
+                This panel keeps the selected movie, processing state, and
+                host-only actions together.
               </p>
 
               <div className="metricsGrid">
@@ -1049,7 +1359,9 @@ export default function App() {
                   <span className="metricLabel">Video</span>
                   <strong>
                     {media?.videoCodec ?? 'Unknown'}
-                    {media?.width && media?.height ? ` • ${media.width}x${media.height}` : ''}
+                    {media?.width && media?.height
+                      ? ` �?${media.width}x${media.height}`
+                      : ''}
                   </strong>
                 </div>
                 <div className="metricCard">
@@ -1058,13 +1370,18 @@ export default function App() {
                 </div>
                 <div className="metricCard">
                   <span className="metricLabel">Processing job</span>
-                  <strong>{processingQueued ? 'Queued now' : 'Existing or finished'}</strong>
+                  <strong>
+                    {processingQueued ? 'Queued now' : 'Existing or finished'}
+                  </strong>
                 </div>
               </div>
 
               <div className="progressList">
                 {getProcessingSteps(media).map((step) => (
-                  <div className={`progressItem ${step.state}`} key={step.label}>
+                  <div
+                    className={`progressItem ${step.state}`}
+                    key={step.label}
+                  >
                     <span className="progressDot" />
                     <div>
                       <p className="progressTitle">{step.label}</p>
@@ -1074,13 +1391,19 @@ export default function App() {
                 ))}
               </div>
 
-              {media?.processingError && <p className="inlineError">{media.processingError}</p>}
+              {media?.processingError && (
+                <p className="inlineError">{media.processingError}</p>
+              )}
 
               {media && (
                 <div className="actionsRow">
                   <button
                     className="secondaryButton"
-                    disabled={uploadState === 'working' || deleteState === 'working' || hasActiveRoom}
+                    disabled={
+                      uploadState === 'working' ||
+                      deleteState === 'working' ||
+                      hasActiveRoom
+                    }
                     onClick={() => {
                       void retryProcessing();
                     }}
@@ -1090,7 +1413,9 @@ export default function App() {
                   </button>
                   <button
                     className="secondaryButton dangerButton"
-                    disabled={deleteState === 'working' || uploadState === 'working'}
+                    disabled={
+                      deleteState === 'working' || uploadState === 'working'
+                    }
                     onClick={() => {
                       void deleteSelectedMedia();
                     }}
@@ -1115,8 +1440,11 @@ export default function App() {
                   </div>
                 </div>
                 <p className="sectionCopy">
-                  Upload <span className="fontMono">.srt</span>, <span className="fontMono">.vtt</span>, or <span className="fontMono">.ass</span>.
-                  The selected track can be used as the room default and updated later while the room is open.
+                  Upload <span className="fontMono">.srt</span>,{' '}
+                  <span className="fontMono">.vtt</span>, or{' '}
+                  <span className="fontMono">.ass</span>. The selected track can
+                  be used as the room default and updated later while the room
+                  is open.
                 </p>
 
                 <div className="actionsRow">
@@ -1127,28 +1455,45 @@ export default function App() {
                       const nextFile = event.target.files?.[0] ?? null;
                       setSelectedSubtitleFile(nextFile);
                       setError(null);
-                      setMessage(nextFile ? 'Subtitle selected and ready to upload.' : null);
+                      setMessage(
+                        nextFile
+                          ? 'Subtitle selected and ready to upload.'
+                          : null
+                      );
                     }}
                     ref={subtitleInputRef}
                     type="file"
                   />
-                  <button className="primaryButton" onClick={() => subtitleInputRef.current?.click()} type="button">
+                  <button
+                    className="primaryButton"
+                    onClick={() => subtitleInputRef.current?.click()}
+                    type="button"
+                  >
                     Pick subtitle file
                   </button>
                   <button
                     className="secondaryButton"
-                    disabled={!selectedSubtitleFile || !status || subtitleUploadState === 'working'}
+                    disabled={
+                      !selectedSubtitleFile ||
+                      !status ||
+                      subtitleUploadState === 'working'
+                    }
                     onClick={() => {
                       void uploadSelectedSubtitle();
                     }}
                     type="button"
                   >
-                    {subtitleUploadState === 'working' ? 'Uploading...' : 'Upload subtitle'}
+                    {subtitleUploadState === 'working'
+                      ? 'Uploading...'
+                      : 'Upload subtitle'}
                   </button>
                 </div>
 
                 <div className="infoCard">
-                  <p className="infoTitle">{selectedSubtitleFile?.name ?? 'No subtitle file selected for upload'}</p>
+                  <p className="infoTitle">
+                    {selectedSubtitleFile?.name ??
+                      'No subtitle file selected for upload'}
+                  </p>
                   <p className="infoMeta">
                     {selectedSubtitleFile
                       ? 'This file is ready to upload to the current movie.'
@@ -1166,18 +1511,22 @@ export default function App() {
                           <p className="subtitleTitle">{subtitle.label}</p>
                           <p className="subtitleMeta">
                             {subtitle.format}
-                            {subtitle.language ? ` • ${subtitle.language}` : ''}
-                            {subtitle.isDefault ? ' • default' : ''}
+                            {subtitle.language ? ` �?${subtitle.language}` : ''}
+                            {subtitle.isDefault ? ' �?default' : ''}
                           </p>
                         </div>
                         {selectedRoomSubtitleId === subtitle.id && (
-                          <span className="pill activePill">Selected for room</span>
+                          <span className="pill activePill">
+                            Selected for room
+                          </span>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="emptyState">Subtitle uploads will appear here after conversion.</div>
+                  <div className="emptyState">
+                    Subtitle uploads will appear here after conversion.
+                  </div>
                 )}
               </section>
             )}
@@ -1195,7 +1544,8 @@ export default function App() {
               {media ? (
                 <>
                   <p className="sectionCopy">
-                    Room creation stays inside the desktop dashboard. The selected subtitle becomes the initial room subtitle.
+                    Room creation stays inside the desktop dashboard. The
+                    selected subtitle becomes the initial room subtitle.
                   </p>
 
                   <div className="fieldGrid">
@@ -1204,7 +1554,9 @@ export default function App() {
                       <input
                         className="selectInput"
                         maxLength={48}
-                        onChange={(event) => setHostDisplayName(event.target.value)}
+                        onChange={(event) =>
+                          setHostDisplayName(event.target.value)
+                        }
                         placeholder="Host display name"
                         value={hostDisplayName}
                       />
@@ -1214,7 +1566,9 @@ export default function App() {
                       <span className="fieldLabel">Room expiry</span>
                       <select
                         className="selectInput"
-                        onChange={(event) => setRoomExpiryHours(event.target.value)}
+                        onChange={(event) =>
+                          setRoomExpiryHours(event.target.value)
+                        }
                         value={roomExpiryHours}
                       >
                         <option value="6">Expires in 6 hours</option>
@@ -1230,7 +1584,9 @@ export default function App() {
                         className="selectInput"
                         onChange={(event) => {
                           const nextValue = event.target.value;
-                          setSelectedRoomSubtitleId(nextValue === '__off__' ? null : nextValue);
+                          setSelectedRoomSubtitleId(
+                            nextValue === '__off__' ? null : nextValue
+                          );
                         }}
                         value={selectedRoomSubtitleId ?? '__off__'}
                       >
@@ -1247,28 +1603,36 @@ export default function App() {
                   <div className="actionsRow">
                     <button
                       className="primaryButton"
-                      disabled={media.status !== 'ready' || roomState === 'working' || hasActiveRoom}
+                      disabled={
+                        media.status !== 'ready' ||
+                        roomState === 'working' ||
+                        hasActiveRoom
+                      }
                       onClick={() => {
                         void createRoom();
                       }}
                       type="button"
                     >
-                      {roomState === 'working' ? 'Creating room...' : 'Create room'}
+                      {roomState === 'working'
+                        ? 'Creating room...'
+                        : 'Create room'}
                     </button>
 
                     {room && (
                       <button
                         className="secondaryButton"
                         disabled={
-                          roomSubtitleState === 'working'
-                          || selectedRoomSubtitleId === room.room.activeSubtitleId
+                          roomSubtitleState === 'working' ||
+                          selectedRoomSubtitleId === room.room.activeSubtitleId
                         }
                         onClick={() => {
                           void updateRoomSubtitle();
                         }}
                         type="button"
                       >
-                        {roomSubtitleState === 'working' ? 'Updating...' : 'Update room subtitle'}
+                        {roomSubtitleState === 'working'
+                          ? 'Updating...'
+                          : 'Update room subtitle'}
                       </button>
                     )}
                   </div>
@@ -1281,7 +1645,8 @@ export default function App() {
                 </>
               ) : (
                 <div className="emptyState">
-                  Select a movie first. Room controls appear once the host has an active media selection.
+                  Select a movie first. Room controls appear once the host has
+                  an active media selection.
                 </div>
               )}
             </section>
@@ -1311,23 +1676,32 @@ export default function App() {
                     </div>
                     <div className="metricCard">
                       <span className="metricLabel">Expires</span>
-                      <strong>{room.room.expiresAt ? formatDateTime(room.room.expiresAt) : 'No expiration'}</strong>
+                      <strong>
+                        {room.room.expiresAt
+                          ? formatDateTime(room.room.expiresAt)
+                          : 'No expiration'}
+                      </strong>
                     </div>
                   </div>
 
                   <div className="infoCard">
-                    <p className="infoTitle">{room.media?.originalFileName ?? 'No media attached'}</p>
-                    <p className="infoMeta">
-                      Playback state: {room.room.playbackState} at {room.room.currentPlaybackTime.toFixed(2)}s
+                    <p className="infoTitle">
+                      {room.media?.originalFileName ?? 'No media attached'}
                     </p>
                     <p className="infoMeta">
-                      Last state update: {formatDateTime(room.room.lastStateUpdatedAt)}
+                      Playback state: {room.room.playbackState} at{' '}
+                      {room.room.currentPlaybackTime.toFixed(2)}s
+                    </p>
+                    <p className="infoMeta">
+                      Last state update:{' '}
+                      {formatDateTime(room.room.lastStateUpdatedAt)}
                     </p>
                   </div>
                 </>
               ) : (
                 <div className="emptyState">
-                  Create a room to make the secret link, participant state, and subtitle sync visible here.
+                  Create a room to make the secret link, participant state, and
+                  subtitle sync visible here.
                 </div>
               )}
             </section>
@@ -1343,9 +1717,15 @@ export default function App() {
               {room ? (
                 <div className="shareList">
                   <div className="shareCard">
-                    <span className="shareLabel">Configured secret room URL</span>
+                    <span className="shareLabel">
+                      Configured secret room URL
+                    </span>
                     <p className="shareValue">{room.shareUrl}</p>
-                    <button className="ghostButton" onClick={() => void copyText(room.shareUrl)} type="button">
+                    <button
+                      className="ghostButton"
+                      onClick={() => void copyText(room.shareUrl)}
+                      type="button"
+                    >
                       Copy configured URL
                     </button>
                   </div>
@@ -1354,7 +1734,11 @@ export default function App() {
                     <div className="shareCard">
                       <span className="shareLabel">Local room URL</span>
                       <p className="shareValue">{roomPlayerUrl}</p>
-                      <button className="ghostButton" onClick={() => void copyText(roomPlayerUrl)} type="button">
+                      <button
+                        className="ghostButton"
+                        onClick={() => void copyText(roomPlayerUrl)}
+                        type="button"
+                      >
                         Copy local URL
                       </button>
                     </div>
@@ -1364,8 +1748,40 @@ export default function App() {
                     <div className="shareCard">
                       <span className="shareLabel">LAN room URL</span>
                       <p className="shareValue">{lanRoomPlayerUrl}</p>
-                      <button className="ghostButton" onClick={() => void copyText(lanRoomPlayerUrl)} type="button">
+                      <button
+                        className="ghostButton"
+                        onClick={() => void copyText(lanRoomPlayerUrl)}
+                        type="button"
+                      >
                         Copy LAN URL
+                      </button>
+                    </div>
+                  )}
+
+                  {hostRoomPlayerUrl && (
+                    <div className="shareCard">
+                      <span className="shareLabel">Local host room URL</span>
+                      <p className="shareValue">{hostRoomPlayerUrl}</p>
+                      <button
+                        className="ghostButton"
+                        onClick={() => void copyText(hostRoomPlayerUrl)}
+                        type="button"
+                      >
+                        Copy local host URL
+                      </button>
+                    </div>
+                  )}
+
+                  {lanHostRoomPlayerUrl && (
+                    <div className="shareCard">
+                      <span className="shareLabel">LAN host room URL</span>
+                      <p className="shareValue">{lanHostRoomPlayerUrl}</p>
+                      <button
+                        className="ghostButton"
+                        onClick={() => void copyText(lanHostRoomPlayerUrl)}
+                        type="button"
+                      >
+                        Copy LAN host URL
                       </button>
                     </div>
                   )}
@@ -1374,9 +1790,15 @@ export default function App() {
                     <>
                       {playerUrl && (
                         <div className="shareCard">
-                          <span className="shareLabel">Local player preview</span>
+                          <span className="shareLabel">
+                            Local player preview
+                          </span>
                           <p className="shareValue">{playerUrl}</p>
-                          <button className="ghostButton" onClick={() => void copyText(playerUrl)} type="button">
+                          <button
+                            className="ghostButton"
+                            onClick={() => void copyText(playerUrl)}
+                            type="button"
+                          >
                             Copy player URL
                           </button>
                         </div>
@@ -1386,7 +1808,11 @@ export default function App() {
                         <div className="shareCard">
                           <span className="shareLabel">LAN player preview</span>
                           <p className="shareValue">{lanPlayerUrl}</p>
-                          <button className="ghostButton" onClick={() => void copyText(lanPlayerUrl)} type="button">
+                          <button
+                            className="ghostButton"
+                            onClick={() => void copyText(lanPlayerUrl)}
+                            type="button"
+                          >
                             Copy LAN player URL
                           </button>
                         </div>
@@ -1395,7 +1821,9 @@ export default function App() {
                   )}
                 </div>
               ) : (
-                <div className="emptyState">Share URLs appear after room creation.</div>
+                <div className="emptyState">
+                  Share URLs appear after room creation.
+                </div>
               )}
             </section>
 
@@ -1413,12 +1841,15 @@ export default function App() {
                     {participants.map((participant) => (
                       <div className="participantCard" key={participant.id}>
                         <div className="participantHeader">
-                          <div>
-                            <p className="participantName">{participant.displayName}</p>
-                            <p className="participantMeta">Joined {formatDateTime(participant.joinedAt)}</p>
+                          <div className="participantIdentity">
+                            <p className="participantName">
+                              {participant.displayName}
+                            </p>
                           </div>
                           <div className="participantBadges">
-                            <span className="pill">{getParticipantRoleLabel(participant)}</span>
+                            <span className="pill">
+                              {getParticipantRoleLabel(participant)}
+                            </span>
                             <span
                               className={`pill ${participant.connectionState === 'connected' ? 'activePill' : 'mutedPill'}`}
                             >
@@ -1426,16 +1857,26 @@ export default function App() {
                             </span>
                           </div>
                         </div>
-                        <p className="participantMeta">Last seen {formatDateTime(participant.lastSeenAt)}</p>
+                        <div className="participantTimeline">
+                          <p className="participantMeta">
+                            Joined {formatDateTime(participant.joinedAt)}
+                          </p>
+                          <p className="participantMeta">
+                            Last seen {formatDateTime(participant.lastSeenAt)}
+                          </p>
+                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="emptyState">Waiting for participants to join this room.</div>
+                  <div className="emptyState">
+                    Waiting for participants to join this room.
+                  </div>
                 )
               ) : (
                 <div className="emptyState">
-                  Participant status becomes visible once a room has been created.
+                  Participant status becomes visible once a room has been
+                  created.
                 </div>
               )}
             </section>
@@ -1448,12 +1889,114 @@ export default function App() {
                 </div>
               </div>
               <div className="infoCard">
-                <p className="infoTitle">{media?.originalFileName ?? 'No movie selected'}</p>
-                <p className="infoMeta">Planned room subtitle: {selectedSubtitle?.label ?? 'None'}</p>
+                <p className="infoTitle">
+                  {media?.originalFileName ?? 'No movie selected'}
+                </p>
                 <p className="infoMeta">
-                  Room action: {room ? 'Manage current room' : 'Create a new room once media is ready'}
+                  Planned room subtitle: {selectedSubtitle?.label ?? 'None'}
+                </p>
+                <p className="infoMeta">
+                  Room action:{' '}
+                  {room
+                    ? 'Manage current room'
+                    : 'Create a new room once media is ready'}
                 </p>
               </div>
+            </section>
+
+            <section className="surfacePanel">
+              <div className="sectionHeader">
+                <div>
+                  <p className="sectionEyebrow">Diagnostics</p>
+                  <h2>Server health and cleanup policy</h2>
+                </div>
+                <button
+                  className="ghostButton"
+                  onClick={() => void refreshDiagnostics()}
+                  type="button"
+                >
+                  Refresh diagnostics
+                </button>
+              </div>
+
+              {health.kind === 'success' && systemStatus.kind === 'success' ? (
+                <>
+                  <div className="metricsGrid">
+                    <div className="metricCard">
+                      <span className="metricLabel">Server health</span>
+                      <strong>{health.data.status}</strong>
+                    </div>
+                    <div className="metricCard">
+                      <span className="metricLabel">Uptime</span>
+                      <strong>{health.data.uptimeSeconds}s</strong>
+                    </div>
+                    <div className="metricCard">
+                      <span className="metricLabel">Active rooms</span>
+                      <strong>
+                        {systemStatus.data.diagnostics.activeRooms}
+                      </strong>
+                    </div>
+                    <div className="metricCard">
+                      <span className="metricLabel">Processing jobs</span>
+                      <strong>
+                        {systemStatus.data.diagnostics.activeProcessingJobs}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="infoCard">
+                    <p className="infoTitle">Cleanup policy</p>
+                    <p className="infoMeta">
+                      Interval: every{' '}
+                      {systemStatus.data.cleanup.intervalMinutes} minutes
+                    </p>
+                    <p className="infoMeta">
+                      Idle room TTL:{' '}
+                      {systemStatus.data.cleanup.idleRoomTtlMinutes} minutes
+                    </p>
+                    <p className="infoMeta">
+                      HLS retention:{' '}
+                      {systemStatus.data.cleanup.hlsRetentionHours} hours
+                    </p>
+                    <p className="infoMeta">
+                      Last cleanup:{' '}
+                      {systemStatus.data.cleanup.lastRun
+                        ? formatDateTime(
+                            systemStatus.data.cleanup.lastRun.finishedAt
+                          )
+                        : 'No cleanup pass recorded yet'}
+                    </p>
+                  </div>
+
+                  <div className="infoCard">
+                    <p className="infoTitle">Storage and runtime</p>
+                    <p className="infoMeta">
+                      Database: {systemStatus.data.database.path}
+                    </p>
+                    <p className="infoMeta">
+                      Media dir: {systemStatus.data.storage.mediaDir}
+                    </p>
+                    <p className="infoMeta">
+                      HLS dir: {systemStatus.data.storage.hlsDir}
+                    </p>
+                    <p className="infoMeta">
+                      Subtitle dir: {systemStatus.data.storage.subtitleDir}
+                    </p>
+                  </div>
+                </>
+              ) : health.kind === 'error' || systemStatus.kind === 'error' ? (
+                <div className="emptyState errorState">
+                  {health.kind === 'error'
+                    ? health.message
+                    : systemStatus.kind === 'error'
+                      ? systemStatus.message
+                      : 'Diagnostics failed'}
+                </div>
+              ) : (
+                <div className="emptyState">
+                  Loading diagnostics from the local server...
+                </div>
+              )}
             </section>
           </div>
         </section>
@@ -1461,5 +2004,3 @@ export default function App() {
     </main>
   );
 }
-
-

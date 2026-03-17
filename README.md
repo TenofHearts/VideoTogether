@@ -3,6 +3,7 @@
 VideoShare is a private desktop-first movie sharing app for two people. The host runs the local server and Tauri desktop app, imports a movie from disk, processes it into HLS, creates a secret room URL, and shares that URL with the second viewer.
 
 Current implementation status:
+
 - Phases 0 through 6 are complete.
 - Phase 7 (WebRTC video call) is currently deferred.
 - Shared browser playback, subtitles, room presence, and synchronized play/pause/seek are implemented.
@@ -40,6 +41,7 @@ storage/
 ## Prerequisites
 
 You need these installed on the host machine:
+
 - Node.js 22+
 - npm 11+
 - `ffmpeg`
@@ -52,6 +54,7 @@ You need these installed on the host machine:
 Start from `.env.example`.
 
 Important variables:
+
 - `PORT`
 - `PUBLIC_BASE_URL`
 - `WEB_URL`
@@ -64,6 +67,7 @@ Important variables:
 - `FFPROBE_PATH`
 
 Recommended local development defaults:
+
 - server: `http://localhost:3000`
 - web: `http://localhost:5173`
 - desktop dev shell: `npm run dev:desktop`
@@ -99,6 +103,7 @@ npm run dev:server
 ```
 
 You should then have:
+
 - API on `http://localhost:3000`
 - health endpoint on `http://localhost:3000/health`
 
@@ -109,6 +114,7 @@ npm run dev:web
 ```
 
 Default local frontend:
+
 - `http://localhost:5173`
 
 ### 3. Start the desktop host dashboard
@@ -122,6 +128,7 @@ The Tauri app is the main host control surface in the current implementation.
 ### 4. Host workflow in the desktop app
 
 Inside the desktop app:
+
 1. Pick a local movie file, or reuse a previously uploaded movie from the media library.
 2. Wait for processing to finish if the movie is new.
 3. Optionally upload subtitle files.
@@ -129,8 +136,10 @@ Inside the desktop app:
 5. Set host display name and room expiry.
 6. Create the room.
 7. Copy the generated room URL from the share panel.
+8. If the host also wants to watch in the browser, use the desktop app's Local host room URL or LAN host room URL.
 
 The desktop host dashboard also lets you:
+
 - review processing progress
 - inspect media metadata
 - close the active room
@@ -143,14 +152,26 @@ The desktop host dashboard also lets you:
 The guest does not need the desktop app.
 
 Guest flow:
+
 1. Open the secret room URL in a browser.
 2. Enter a display name.
 3. Join the room.
 4. Watch the movie in the browser player.
 
+### 5.1 Host browser playback
+
+If the host wants to open the same room in a browser player:
+
+1. Create the room from the desktop app.
+2. Copy Local host room URL for the same machine, or LAN host room URL for another device on the same network.
+3. Open that URL in a browser.
+
+The host URL reuses the existing host participant instead of consuming the guest slot.
+
 ### 6. Shared playback behavior
 
 Implemented today:
+
 - synchronized play
 - synchronized pause
 - synchronized seek
@@ -160,6 +181,7 @@ Implemented today:
 - participant presence
 
 Not implemented yet:
+
 - WebRTC voice/video call
 
 ## Containerized server flow
@@ -171,6 +193,7 @@ npm run docker:up
 ```
 
 This uses `infra/docker-compose.yml` and mounts:
+
 - `storage/media`
 - `storage/hls`
 - `storage/subtitles`
@@ -182,10 +205,12 @@ The desktop app itself is still run locally on the host machine.
 ## Useful endpoints
 
 ### Health and diagnostics
+
 - `GET /health`
 - `GET /api/system/status`
 
 ### Rooms
+
 - `POST /api/rooms`
 - `GET /api/rooms/:token`
 - `POST /api/rooms/:token/join`
@@ -193,6 +218,7 @@ The desktop app itself is still run locally on the host machine.
 - `POST /api/rooms/:token/close`
 
 ### Media
+
 - `GET /api/media`
 - `POST /api/media/import`
 - `GET /api/media/:id`
@@ -202,6 +228,7 @@ The desktop app itself is still run locally on the host machine.
 - `GET /api/media/:id/subtitles`
 
 ### Static playback assets
+
 - `GET /media/:mediaId/*`
 - `GET /subtitles/:subtitleId.vtt`
 
