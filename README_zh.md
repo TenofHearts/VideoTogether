@@ -270,3 +270,7 @@ npm run dev:desktop
 ## 使用建议
 
 可以使用 [zerotier](https://www.zerotier.com/) 来实现不在同一个物理局域网内的视频播放
+
+# 许可证
+
+本项目采用 Apache License 2.0 许可发布，详情请参见 `LICENSE` 文件。

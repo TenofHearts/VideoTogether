@@ -270,3 +270,7 @@ Static playback assets:
 ## Pro Tip
 
 To share video with people not within the same physical LAN, you can use projects like [zerotier](https://www.zerotier.com/)
+
+# License
+
+This project is licensed under the Apache License 2.0 - see the `LICENSE` file for details.
