@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader native",
-    "build": "tsc -p tsconfig.json && vite build --configLoader native",
+    "build": "node -e \"const fs=require('fs');fs.mkdirSync('src-tauri/build',{recursive:true});fs.writeFileSync('src-tauri/build/EULA.txt',fs.readFileSync('../../LICENSE')+'\\n\\n'+fs.readFileSync('../../NOTICE'))\" && tsc -p tsconfig.json && vite build --configLoader native",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
     "tauri:dev": "tauri dev",
