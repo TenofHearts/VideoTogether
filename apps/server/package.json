@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
+    "build:release": "npm run build && npm run package:exe",
+    "package:exe": "node ./scripts/build-sea.mjs",
     "start": "node dist/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint src --ext .ts"
@@ -17,7 +19,8 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "esbuild": "^0.27.4",
+    "postject": "^1.0.0-alpha.6",
     "tsx": "^4.19.3"
   }
 }
-

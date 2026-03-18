@@ -14,17 +14,42 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isSea } from 'node:sea';
 
 import { z } from 'zod';
 
-const currentDirectory = dirname(fileURLToPath(import.meta.url));
-const workspaceRoot = resolve(currentDirectory, '../../../..');
+function findWorkspaceRoot(startDirectory: string): string {
+  let candidate = resolve(startDirectory);
+
+  while (true) {
+    if (
+      existsSync(resolve(candidate, 'apps', 'server', 'package.json')) &&
+      existsSync(resolve(candidate, 'apps', 'web', 'package.json'))
+    ) {
+      return candidate;
+    }
+
+    const parent = dirname(candidate);
+
+    if (parent === candidate) {
+      return resolve(startDirectory);
+    }
+
+    candidate = parent;
+  }
+}
+
+const workingDirectory = process.cwd();
+const workspaceRoot =
+  process.env.VIDEOSHARE_WORKSPACE_DIR?.trim() ||
+  findWorkspaceRoot(workingDirectory);
+const detectedRuntimeRoot = isSea() ? workingDirectory : undefined;
+const runtimeRoot = process.env.VIDEOSHARE_RUNTIME_DIR?.trim() || detectedRuntimeRoot || workspaceRoot;
 
 function getDefaultStoragePath(...segments: string[]): string {
-  return resolve(workspaceRoot, 'storage', ...segments);
+  return resolve(runtimeRoot, 'storage', ...segments);
 }
 
 function resolveDatabasePath(databaseUrl?: string): string {
@@ -45,8 +70,56 @@ function resolveDatabasePath(databaseUrl?: string): string {
   return rawPath;
 }
 
+function parseEnvFile(contents: string): Record<string, string> {
+  return Object.fromEntries(
+    contents
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'))
+      .flatMap((line) => {
+        const separatorIndex = line.indexOf('=');
+
+        if (separatorIndex <= 0) {
+          return [];
+        }
+
+        const key = line.slice(0, separatorIndex).trim();
+        const value = line
+          .slice(separatorIndex + 1)
+          .trim()
+          .replace(/^['"]|['"]$/g, '');
+
+        return key.length > 0 ? [[key, value]] : [];
+      })
+  );
+}
+
+function loadFileEnv(): Record<string, string> {
+  const explicitEnvFile = process.env.VIDEOSHARE_ENV_FILE?.trim();
+  const runtimeDirectory = process.env.VIDEOSHARE_RUNTIME_DIR?.trim() || detectedRuntimeRoot;
+
+  const candidates = [
+    explicitEnvFile,
+    runtimeDirectory ? resolve(runtimeDirectory, '.env') : undefined,
+    runtimeDirectory ? resolve(runtimeDirectory, '.env.example') : undefined,
+    resolve(workspaceRoot, '.env')
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+
+    return parseEnvFile(readFileSync(candidate, 'utf8'));
+  }
+
+  return {};
+}
+
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  NODE_ENV: z
+    .enum(['development', 'production', 'test'])
+    .default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
   WEB_URL: z.string().optional(),
@@ -69,7 +142,10 @@ const envSchema = z.object({
 export type AppEnv = ReturnType<typeof loadEnv>;
 
 export function loadEnv() {
-  const parsedEnv = envSchema.parse(process.env);
+  const parsedEnv = envSchema.parse({
+    ...loadFileEnv(),
+    ...process.env
+  });
   const databasePath = resolveDatabasePath(parsedEnv.DATABASE_URL);
   const publicBaseUrl =
     parsedEnv.PUBLIC_BASE_URL && parsedEnv.PUBLIC_BASE_URL.length > 0
@@ -94,14 +170,12 @@ export function loadEnv() {
     databasePath,
     web: {
       distDir:
-        parsedEnv.WEB_DIST_DIR ??
-        resolve(workspaceRoot, 'apps', 'web', 'dist')
+        parsedEnv.WEB_DIST_DIR ?? resolve(workspaceRoot, 'apps', 'web', 'dist')
     },
     storage: {
       mediaDir: parsedEnv.MEDIA_INPUT_DIR ?? getDefaultStoragePath('media'),
       hlsDir: parsedEnv.HLS_OUTPUT_DIR ?? getDefaultStoragePath('hls'),
-      subtitleDir:
-        parsedEnv.SUBTITLE_DIR ?? getDefaultStoragePath('subtitles'),
+      subtitleDir: parsedEnv.SUBTITLE_DIR ?? getDefaultStoragePath('subtitles'),
       tempDir: parsedEnv.TEMP_DIR ?? getDefaultStoragePath('temp')
     },
     mediaProcessing: {

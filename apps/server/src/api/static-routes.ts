@@ -39,7 +39,9 @@ export async function registerStaticRoutes(
       '*': string;
     };
   }>('/media/:mediaId/*', async (request, reply) => {
-    const media = dependencies.mediaService.getMediaById(request.params.mediaId);
+    const media = dependencies.mediaService.getMediaById(
+      request.params.mediaId
+    );
 
     if (!media || media.status !== 'ready' || !media.hlsManifestPath) {
       throw new HttpError(404, 'Media not found');
@@ -78,6 +80,11 @@ export async function registerStaticRoutes(
 
     return streamFile(reply, filePath);
   });
+
+  if (dependencies.env.nodeEnv !== 'production') {
+    app.log.info('Frontend fallback disabled outside production mode');
+    return;
+  }
 
   const webIndexPath = resolve(dependencies.env.web.distDir, 'index.html');
 
@@ -148,4 +155,3 @@ export async function registerStaticRoutes(
     return streamFile(reply, webIndexPath);
   });
 }
-
