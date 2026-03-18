@@ -19,6 +19,7 @@
     "host:start": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-host.ps1",
     "host:stop": "powershell -ExecutionPolicy Bypass -File infra/scripts/stop-host.ps1",
     "host:ngrok": "powershell -ExecutionPolicy Bypass -File infra/scripts/start-ngrok.ps1",
+    "version": "node infra/scripts/sync-version.mjs && git add apps/desktop/package.json apps/desktop/src-tauri/tauri.conf.json apps/desktop/src-tauri/Cargo.toml",
     "build": "npm run build --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
