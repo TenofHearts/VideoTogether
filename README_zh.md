@@ -46,7 +46,68 @@ infra/
   scripts/   启动、停止、打包脚本
 ```
 
-## 运行依赖
+## 面向普通用户（Windows）
+
+你可以直接在 Windows 系统上安装 VideoTogether：
+1. 请前往 [Releases](https://github.com/TenofHearts/VideoTogether/releases) 页面下载最新的 Windows 安装包（`.exe`）。
+2. 双击运行安装程序，按提示完成安装。
+3. 在 `.env.example` 中配置你的 IP 地址。
+4. 从开始菜单启动 VideoTogether 即可使用。
+
+### IP 配置
+
+打开你常用的终端（例如 powershell），输入以下命令：
+
+```powershell
+> ipconfig
+```
+
+你会在输出结果中找到你的 IPv4 地址，看起来像这样：
+
+```
+以太网适配器 以太网:
+
+   连接特定的 DNS 后缀 . . . . . . . :
+   IPv6 地址 . . . . . . . . . . . . : xxxx:xxxx:xxxx:xxxx::xxxx
+   本地链接 IPv6 地址. . . . . . . . : fe80::xxxx:xxxx:xxxx:xxxx%xx
+   IPv4 地址 . . . . . . . . . . . . : 10.x.x.x
+   子网掩码  . . . . . . . . . . . . : 255.255.240.0
+   默认网关. . . . . . . . . . . . . : fe80::xxxx:xxxx:xxxx:xxxx%xx
+                                       10.x.x.x
+```
+
+你需要复制这个 IPv4 地址，并将它粘贴到 `.env.example` 文件中：
+
+```env
+...
+LAN_IP=10.x.x.x
+...
+```
+
+完成这些之后就可以了！
+
+#### 关于 ZeroTier 的说明
+
+正如后文所述，如果你想和不在同一个物理局域网内的人共享视频，你需要用到 ZeroTier。在这种情况下，你需要：
+1. 下载并安装 ZeroTier
+2. 和你想共享视频的人加入同一个虚拟局域网
+3. 将你在 ZeroTier 面板中分配到的 IP 地址设置为 `.env.example` 中的 `LAN_IP`。
+
+成功配置 ZeroTier 后，运行 `ipconfig` 你应该会看到类似如下的信息：
+```
+以太网适配器 ZeroTier One [xxxxxxxxxxxxxxxx]:
+
+   连接特定的 DNS 后缀 . . . . . . . :
+   本地链接 IPv6 地址. . . . . . . . : fe80::xxxx:xxxx:xxxx:xxxx%xx
+   IPv4 地址 . . . . . . . . . . . . : 10.x.x.x
+   子网掩码  . . . . . . . . . . . . : 255.255.255.0
+   默认网关. . . . . . . . . . . . . : 25.x.x.x
+```
+这个结果中的 IPv4 地址应该和你自己在 ZeroTier 中的 IP 地址一致。
+
+## 面向开发者
+
+### 运行依赖
 
 在主机电脑上需要准备：
 
@@ -59,7 +120,7 @@ infra/
 - Docker Desktop
   - 仅当 `USE_DOCKER=true` 时需要
 
-## 环境变量
+### 环境变量
 
 推荐从 `.env.example` 开始。
 
@@ -96,7 +157,7 @@ infra/
 - Docker 默认关闭
 - 局域网 URL 只使用固定配置的 `LAN_IP`
 
-## 安装依赖
+### 安装依赖
 
 在仓库根目录执行：
 

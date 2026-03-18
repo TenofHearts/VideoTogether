@@ -46,7 +46,68 @@ infra/
   scripts/   startup, shutdown, and packaging scripts
 ```
 
-## Requirements
+## For Users (Windows)
+
+You can install VideoTogether directly on Windows:
+1. Download the latest Windows installer (`.exe`) from the [Releases](https://github.com/TenofHearts/VideoTogether/releases) page.
+2. Run the installer and follow the instructions.
+3. Configure your ip in `.env.example`
+4. Launch VideoTogether from your Start menu.
+
+### IP configuation
+
+Open the terminal of your choice, say, powershell. Input the command: 
+
+```powershell
+> ipconfig
+```
+
+You'll get your ipv4 address in the result that looks something like this: 
+
+```
+Ethernet adapter Ethernet:
+
+   Connection-specific DNS Suffix  . :
+   IPv6 Address. . . . . . . . . . . : xxxx:xxxx:xxxx:xxxx::xxxx
+   Link-local IPv6 Address . . . . . : fe80::xxxx:xxxx:xxxx:xxxx%xx
+   IPv4 Address. . . . . . . . . . . : 10.x.x.x
+   Subnet Mask . . . . . . . . . . . : 255.255.240.0
+   Default Gateway . . . . . . . . . : fe80::xxxx:xxxx:xxxx:xxxx%xx
+                                       10.x.x.x
+```
+
+You need to copy the IPv4 address, and paste it into `.env.example`: 
+
+```env
+...
+LAN_IP=10.x.x.x
+...
+```
+
+And after that, you're done!
+
+#### Note about Zerotier
+
+As is stated later, zerotier is required to share the movie with someone not in the same physical LAN. In this case, you'll need to : 
+1. Download zerotier
+2. Join the same virtual LAN with whom you'd like to share the movie with
+3. Set the `LAN_IP` in `.env.example` as the ip you assigned yourself in the zerotier panel.
+
+Once you've successfully configured zerotier, you should see something like this after running `ipconfig`: 
+```
+Ethernet adapter ZeroTier One [xxxxxxxxxxxxxxxx]:
+
+   Connection-specific DNS Suffix  . :
+   Link-local IPv6 Address . . . . . : fe80::xxxx:xxxx:xxxx:xxxx%xx
+   IPv4 Address. . . . . . . . . . . : 10.x.x.x
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : 25.x.x.x
+```
+The IPv4 in this result should match the ip you assigned yourself in zerotier. 
+
+## For Developers
+
+### Requirements
 
 You need these on the host machine:
 
@@ -59,7 +120,7 @@ You need these on the host machine:
 - Docker Desktop
   - only required when `USE_DOCKER=true`
 
-## Environment Variables
+### Environment Variables
 
 Start from `.env.example`.
 
@@ -96,7 +157,7 @@ Current `.env.example` defaults assume:
 - Docker disabled by default
 - LAN URL generation uses the fixed `LAN_IP` value
 
-## Install Dependencies
+### Install Dependencies
 
 From the repository root:
 
