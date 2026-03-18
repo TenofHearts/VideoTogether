@@ -274,3 +274,5 @@ To share video with people not within the same physical LAN, you can use project
 # License
 
 This project is licensed under the Apache License 2.0 - see the `LICENSE` file for details.
+
+This project uses [FFmpeg](https://ffmpeg.org) which is licensed under the GNU Lesser General Public License (LGPL) version 2.1 or later.

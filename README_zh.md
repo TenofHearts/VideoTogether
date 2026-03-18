@@ -274,3 +274,5 @@ npm run dev:desktop
 # 许可证
 
 本项目采用 Apache License 2.0 许可发布，详情请参见 `LICENSE` 文件。
+
+本项目使用了 [FFmpeg](https://ffmpeg.org)（由 GNU Lesser General Public License (LGPL) v2.1 许可授权）。
