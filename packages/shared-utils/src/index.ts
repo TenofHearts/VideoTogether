@@ -44,7 +44,7 @@ export function getApiBaseUrl(explicitUrl?: string): string {
   }
 
   if (typeof window !== 'undefined' && window.location.protocol.startsWith('http')) {
-    return `${window.location.protocol}//${window.location.hostname}:3000`;
+    return stripTrailingSlash(window.location.origin);
   }
 
   return 'http://localhost:3000';

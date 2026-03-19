@@ -334,20 +334,20 @@ export default function App() {
     const hostRoomPlayerUrl =
         room && status && hostParticipant
             ? buildParticipantRoomUrl(
-                  status.webUrl,
-                  room.room.token,
-                  hostParticipant.id,
-                  hostParticipant.displayName
-              )
+                status.webUrl,
+                room.room.token,
+                hostParticipant.id,
+                hostParticipant.displayName
+            )
             : null;
     const publicHostRoomPlayerUrl =
         room && status?.publicWebUrl && hostParticipant
             ? buildParticipantRoomUrl(
-                  status.publicWebUrl,
-                  room.room.token,
-                  hostParticipant.id,
-                  hostParticipant.displayName
-              )
+                status.publicWebUrl,
+                room.room.token,
+                hostParticipant.id,
+                hostParticipant.displayName
+            )
             : null;
     const playerUrl =
         media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
@@ -388,12 +388,6 @@ export default function App() {
     const shareLinks: ShareLink[] = [];
 
     if (room) {
-        shareLinks.push({
-            label: 'Secret room URL',
-            value: room.shareUrl,
-            buttonLabel: 'Copy secret room URL'
-        });
-
         if (lanRoomPlayerUrl) {
             shareLinks.push({
                 label: 'LAN room URL',
@@ -407,46 +401,6 @@ export default function App() {
                 label: 'Local host URL',
                 value: hostRoomPlayerUrl,
                 buttonLabel: 'Copy local host URL'
-            });
-        }
-
-        if (showDebugUrls && localRoomPlayerUrl) {
-            shareLinks.push({
-                label: 'Local room URL',
-                value: localRoomPlayerUrl,
-                buttonLabel: 'Copy local room URL'
-            });
-        }
-
-        if (showDebugUrls && publicRoomPlayerUrl) {
-            shareLinks.push({
-                label: 'Public room URL',
-                value: publicRoomPlayerUrl,
-                buttonLabel: 'Copy public room URL'
-            });
-        }
-
-        if (showDebugUrls && publicHostRoomPlayerUrl) {
-            shareLinks.push({
-                label: 'Public host URL',
-                value: publicHostRoomPlayerUrl,
-                buttonLabel: 'Copy public host URL'
-            });
-        }
-
-        if (showDebugUrls && playerUrl) {
-            shareLinks.push({
-                label: 'Local player preview',
-                value: playerUrl,
-                buttonLabel: 'Copy player URL'
-            });
-        }
-
-        if (showDebugUrls && secondaryPlayerUrl) {
-            shareLinks.push({
-                label: secondaryPlayerLabel,
-                value: secondaryPlayerUrl,
-                buttonLabel: secondaryPlayerCopyLabel
             });
         }
     }
@@ -1330,9 +1284,8 @@ export default function App() {
 
         return (
             <section
-                className={`surfacePanel ${
-                    isOperations ? 'opsLibrary' : 'monitorLibrary'
-                }`}
+                className={`surfacePanel ${isOperations ? 'opsLibrary' : 'monitorLibrary'
+                    }`}
             >
                 <div className="sectionHeader">
                     <div>
@@ -1367,9 +1320,8 @@ export default function App() {
                     <div className="mediaQueue">
                         {recentMedia.data.map((item) => (
                             <button
-                                className={`mediaQueueItem${
-                                    selectedId === item.id ? ' selected' : ''
-                                }`}
+                                className={`mediaQueueItem${selectedId === item.id ? ' selected' : ''
+                                    }`}
                                 key={item.id}
                                 onClick={() => {
                                     void handleSelect(item.id);
@@ -1428,8 +1380,8 @@ export default function App() {
                             {deleteState === 'working'
                                 ? 'Deleting...'
                                 : deleteConfirmArmed
-                                  ? 'Confirm delete'
-                                  : 'Delete movie'}
+                                    ? 'Confirm delete'
+                                    : 'Delete movie'}
                         </button>
                     </div>
                 )}
@@ -1581,8 +1533,8 @@ export default function App() {
                                 {selectedSubtitleFile
                                     ? 'This file is ready to attach to the operational movie.'
                                     : subtitles.length > 0
-                                      ? `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} already attached.`
-                                      : 'No subtitle tracks attached yet.'}
+                                        ? `${subtitles.length} subtitle track${subtitles.length === 1 ? '' : 's'} already attached.`
+                                        : 'No subtitle tracks attached yet.'}
                             </p>
                         </div>
 
@@ -1662,8 +1614,8 @@ export default function App() {
                                         ? 'Queued now'
                                         : media.status === 'pending' ||
                                             media.status === 'processing'
-                                          ? 'Existing job running'
-                                          : 'Idle'}
+                                            ? 'Existing job running'
+                                            : 'Idle'}
                                 </strong>
                             </div>
                             <div className="metricCard">
@@ -2050,12 +2002,11 @@ export default function App() {
                                                 {getParticipantRoleLabel(participant)}
                                             </span>
                                             <span
-                                                className={`pill ${
-                                                    participant.connectionState ===
-                                                    'connected'
+                                                className={`pill ${participant.connectionState ===
+                                                        'connected'
                                                         ? 'activePill'
                                                         : 'mutedPill'
-                                                }`}
+                                                    }`}
                                             >
                                                 {getParticipantConnectionLabel(participant)}
                                             </span>
@@ -2158,8 +2109,8 @@ export default function App() {
                                 Last cleanup{' '}
                                 {systemStatus.data.cleanup.lastRun
                                     ? formatDateTime(
-                                          systemStatus.data.cleanup.lastRun.finishedAt
-                                      )
+                                        systemStatus.data.cleanup.lastRun.finishedAt
+                                    )
                                     : 'No cleanup pass recorded yet'}
                             </p>
                         </div>
@@ -2200,8 +2151,8 @@ export default function App() {
                         {health.kind === 'error'
                             ? health.message
                             : systemStatus.kind === 'error'
-                              ? systemStatus.message
-                              : 'Diagnostics failed'}
+                                ? systemStatus.message
+                                : 'Diagnostics failed'}
                     </div>
                 ) : (
                     <div className="emptyState">
@@ -2237,9 +2188,8 @@ export default function App() {
                     <div className="viewToggle" role="tablist" aria-label="Dashboard view">
                         <button
                             aria-selected={activeView === 'operations'}
-                            className={`toggleButton ${
-                                activeView === 'operations' ? 'active' : ''
-                            }`}
+                            className={`toggleButton ${activeView === 'operations' ? 'active' : ''
+                                }`}
                             onClick={() => setActiveView('operations')}
                             role="tab"
                             type="button"
@@ -2248,9 +2198,8 @@ export default function App() {
                         </button>
                         <button
                             aria-selected={activeView === 'monitoring'}
-                            className={`toggleButton ${
-                                activeView === 'monitoring' ? 'active' : ''
-                            }`}
+                            className={`toggleButton ${activeView === 'monitoring' ? 'active' : ''
+                                }`}
                             onClick={() => setActiveView('monitoring')}
                             role="tab"
                             type="button"

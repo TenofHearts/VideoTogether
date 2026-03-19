@@ -131,7 +131,7 @@ Important variables:
   - default: `false`
 - `PORT`
   - local server port used by the production-like host flow
-  - default: `3003`
+  - default: `3000`
 - `PUBLIC_PROTOCOL`
   - protocol used when deriving public share URLs
   - default: `http`
@@ -152,7 +152,7 @@ Important variables:
 Current `.env.example` defaults assume:
 
 - development web URL: `http://localhost:5173`
-- production-like local host flow: `http://localhost:3003`
+- production-like local host flow: `http://localhost:3000`
 - Docker disabled by default
 - LAN URL generation uses only the explicit `LAN_IP` value
 

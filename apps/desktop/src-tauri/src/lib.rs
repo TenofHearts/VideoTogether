@@ -87,40 +87,182 @@ const RUNTIME_ENV_TEMPLATE_FILE_NAME: &str = ".env.example";
 fn default_release_env_template() -> String {
     DEFAULT_ENV_TEMPLATE
         .replace("NODE_ENV=development", "NODE_ENV=production")
+        .replace("PORT=3003", "PORT=3000")
         .replace(
             "WEB_URL=http://localhost:5173",
             "WEB_URL=http://localhost:3000",
         )
 }
 
-fn get_api_base_url() -> String {
-    #[cfg(not(debug_assertions))]
-    if let Some(port) = get_runtime_config_value("PORT") {
-        return format!("http://localhost:{port}");
+const DEFAULT_SERVER_PORT: &str = "3000";
+#[cfg(debug_assertions)]
+const DEFAULT_WEB_DEV_PORT: &str = "5173";
+
+fn build_local_url(protocol: &str, host: &str, port: &str) -> String {
+    format!("{protocol}://{host}:{port}")
+}
+
+#[cfg(debug_assertions)]
+fn parse_workspace_env_file(contents: &str) -> std::collections::HashMap<String, String> {
+    contents
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+
+            let (key, value) = line.split_once('=')?;
+            let key = key.trim();
+
+            if key.is_empty() {
+                return None;
+            }
+
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            Some((key.to_string(), value.to_string()))
+        })
+        .collect()
+}
+
+#[cfg(debug_assertions)]
+fn find_workspace_root(start_directory: &std::path::Path) -> Option<std::path::PathBuf> {
+    let mut candidate = start_directory.to_path_buf();
+
+    loop {
+        if candidate.join("apps").join("server").join("package.json").is_file()
+            && candidate.join("apps").join("web").join("package.json").is_file()
+        {
+            return Some(candidate);
+        }
+
+        if !candidate.pop() {
+            return None;
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+fn read_workspace_env_file() -> std::collections::HashMap<String, String> {
+    let Ok(current_directory) = std::env::current_dir() else {
+        return std::collections::HashMap::new();
+    };
+
+    let Some(workspace_root) = find_workspace_root(&current_directory) else {
+        return std::collections::HashMap::new();
+    };
+
+    for file_name in [".env", ".env.example"] {
+        let candidate = workspace_root.join(file_name);
+
+        if !candidate.is_file() {
+            continue;
+        }
+
+        let Ok(contents) = std::fs::read_to_string(candidate) else {
+            continue;
+        };
+
+        return parse_workspace_env_file(&contents);
     }
 
-    std::env::var("API_BASE_URL").unwrap_or_else(|_| "http://localhost:3000".into())
+    std::collections::HashMap::new()
+}
+
+#[cfg(debug_assertions)]
+fn get_workspace_config_value(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or_else(|| read_workspace_env_file().get(key).cloned())
+}
+
+fn get_api_base_url() -> String {
+    #[cfg(not(debug_assertions))]
+    {
+        if let Some(api_base_url) = get_runtime_config_value("API_BASE_URL") {
+            return api_base_url;
+        }
+
+        if let Some(port) = get_runtime_config_value("PORT") {
+            return build_local_url("http", "localhost", &port);
+        }
+
+        return std::env::var("API_BASE_URL")
+            .unwrap_or_else(|_| build_local_url("http", "localhost", DEFAULT_SERVER_PORT));
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        if let Some(api_base_url) = get_workspace_config_value("API_BASE_URL") {
+            return api_base_url;
+        }
+
+        let port = get_workspace_config_value("PORT")
+            .unwrap_or_else(|| DEFAULT_SERVER_PORT.to_string());
+        return build_local_url("http", "localhost", &port);
+    }
 }
 
 fn get_configured_web_url() -> String {
     #[cfg(not(debug_assertions))]
-    if let Some(web_url) = get_runtime_config_value("WEB_URL") {
-        return web_url;
+    {
+        if let Some(web_url) = get_runtime_config_value("WEB_URL")
+            .or_else(|| get_runtime_config_value("WEB_ORIGIN"))
+        {
+            return web_url;
+        }
+
+        if let Some(public_base_url) = get_runtime_config_value("PUBLIC_BASE_URL") {
+            return public_base_url;
+        }
+
+        return std::env::var("WEB_URL")
+            .or_else(|_| std::env::var("WEB_ORIGIN"))
+            .or_else(|_| std::env::var("PUBLIC_BASE_URL"))
+            .unwrap_or_else(|_| build_local_url("http", "localhost", DEFAULT_SERVER_PORT));
     }
 
-    #[cfg(not(debug_assertions))]
-    if let Some(public_base_url) = get_runtime_config_value("PUBLIC_BASE_URL") {
-        return public_base_url;
-    }
+    #[cfg(debug_assertions)]
+    {
+        if let Some(web_url) = get_workspace_config_value("WEB_URL")
+            .or_else(|| get_workspace_config_value("WEB_ORIGIN"))
+        {
+            return web_url;
+        }
 
-    std::env::var("WEB_URL")
-        .or_else(|_| std::env::var("PUBLIC_BASE_URL"))
-        .unwrap_or_else(|_| "http://localhost:3000".into())
+        let node_env =
+            get_workspace_config_value("NODE_ENV").unwrap_or_else(|| "development".to_string());
+
+        if node_env.eq_ignore_ascii_case("production") {
+            if let Some(public_base_url) = get_workspace_config_value("PUBLIC_BASE_URL") {
+                return public_base_url;
+            }
+        }
+
+        let protocol = get_workspace_config_value("PUBLIC_PROTOCOL")
+            .or_else(|| get_workspace_config_value("APP_PROTOCOL"))
+            .unwrap_or_else(|| "http".to_string());
+        let host = get_workspace_config_value("PUBLIC_HOST")
+            .or_else(|| get_workspace_config_value("APP_HOST"))
+            .unwrap_or_else(|| "localhost".to_string());
+        let port = get_workspace_config_value("WEB_DEV_PORT")
+            .unwrap_or_else(|| DEFAULT_WEB_DEV_PORT.to_string());
+
+        return build_local_url(&protocol, &host, &port);
+    }
 }
 
 fn get_lan_ip() -> Option<String> {
     #[cfg(not(debug_assertions))]
     if let Some(lan_ip) = get_runtime_config_value("LAN_IP") {
+        return Some(lan_ip);
+    }
+
+    #[cfg(debug_assertions)]
+    if let Some(lan_ip) = get_workspace_config_value("LAN_IP") {
         return Some(lan_ip);
     }
 

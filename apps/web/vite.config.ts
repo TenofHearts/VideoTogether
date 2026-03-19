@@ -78,6 +78,7 @@ function buildLocalUrl(protocol: string, host: string, port: string): string {
 }
 
 export default defineConfig(({ mode }) => {
+  const isDevelopment = mode === 'development';
   const env = loadWorkspaceEnv(mode);
   const publicProtocol =
     getNonEmptyValue(env.PUBLIC_PROTOCOL)
@@ -92,10 +93,14 @@ export default defineConfig(({ mode }) => {
   const publicBaseUrl =
     getNonEmptyValue(env.PUBLIC_BASE_URL)
     ?? buildLocalUrl(publicProtocol, publicHost, serverPort);
+  const explicitApiBaseUrl = getNonEmptyValue(env.VITE_API_BASE_URL);
   const apiBaseUrl =
-    getNonEmptyValue(env.VITE_API_BASE_URL)
-    ?? getNonEmptyValue(env.API_BASE_URL)
-    ?? publicBaseUrl;
+    explicitApiBaseUrl
+    ?? (
+      isDevelopment
+        ? getNonEmptyValue(env.API_BASE_URL) ?? publicBaseUrl
+        : ''
+    );
   const webUrl = new URL(
     buildLocalUrl(publicProtocol, publicHost, devWebPort)
   );

@@ -15,108 +15,108 @@ limitations under the License.
 */
 
 :root {
-  color: #edf4ff;
-  font-family: Bahnschrift, 'Segoe UI', sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 28%),
-    radial-gradient(circle at 88% 0%, rgba(34, 211, 238, 0.16), transparent 28%),
-    radial-gradient(circle at 50% 100%, rgba(59, 130, 246, 0.18), transparent 34%),
-    linear-gradient(160deg, #07111d 0%, #0b1628 42%, #08101d 100%);
-  --bg-panel: rgba(7, 15, 27, 0.82);
-  --bg-card: rgba(14, 25, 43, 0.74);
-  --bg-card-strong: rgba(18, 31, 54, 0.92);
-  --line-soft: rgba(148, 163, 184, 0.18);
-  --line-strong: rgba(148, 163, 184, 0.3);
-  --text-main: #edf4ff;
-  --text-soft: #c8d4ea;
-  --text-muted: #8fa4c4;
-  --accent-amber: #f59e0b;
-  --accent-orange: #f97316;
-  --accent-cyan: #22d3ee;
-  --accent-green: #22c55e;
-  --accent-red: #f87171;
+    color: #edf4ff;
+    font-family: Bahnschrift, 'Segoe UI', sans-serif;
+    background:
+        radial-gradient(circle at top left, rgba(245, 158, 11, 0.18), transparent 28%),
+        radial-gradient(circle at 88% 0%, rgba(34, 211, 238, 0.16), transparent 28%),
+        radial-gradient(circle at 50% 100%, rgba(59, 130, 246, 0.18), transparent 34%),
+        linear-gradient(160deg, #07111d 0%, #0b1628 42%, #08101d 100%);
+    --bg-panel: rgba(7, 15, 27, 0.82);
+    --bg-card: rgba(14, 25, 43, 0.74);
+    --bg-card-strong: rgba(18, 31, 54, 0.92);
+    --line-soft: rgba(148, 163, 184, 0.18);
+    --line-strong: rgba(148, 163, 184, 0.3);
+    --text-main: #edf4ff;
+    --text-soft: #c8d4ea;
+    --text-muted: #8fa4c4;
+    --accent-amber: #f59e0b;
+    --accent-orange: #f97316;
+    --accent-cyan: #22d3ee;
+    --accent-green: #22c55e;
+    --accent-red: #f87171;
 }
 
 html,
 body,
 #root {
-  min-height: 100%;
+    min-height: 100%;
 }
 
 body {
-  margin: 0;
+    margin: 0;
 }
 
 * {
-  box-sizing: border-box;
+    box-sizing: border-box;
 }
 
 button,
 input,
 select {
-  font: inherit;
+    font: inherit;
 }
 
 button {
-  cursor: pointer;
+    cursor: pointer;
 }
 
 button:disabled {
-  cursor: not-allowed;
-  opacity: 0.56;
+    cursor: not-allowed;
+    opacity: 0.56;
 }
 
 h1,
 h2,
 p {
-  margin: 0;
+    margin: 0;
 }
 
 .shell {
-  min-height: 100vh;
-  padding: 24px;
+    min-height: 100vh;
+    padding: 24px;
 }
 
 .panel {
-  width: min(100%, 1500px);
-  margin: 0 auto;
-  padding: 24px;
-  border-radius: 32px;
-  border: 1px solid var(--line-soft);
-  background: var(--bg-panel);
-  box-shadow: 0 32px 100px rgba(2, 6, 23, 0.42);
-  backdrop-filter: blur(20px);
+    width: min(100%, 1500px);
+    margin: 0 auto;
+    padding: 24px;
+    border-radius: 32px;
+    border: 1px solid var(--line-soft);
+    background: var(--bg-panel);
+    box-shadow: 0 32px 100px rgba(2, 6, 23, 0.42);
+    backdrop-filter: blur(20px);
 }
 
 .dashboardShell {
-  position: relative;
+    position: relative;
 }
 
 .appBar {
-  position: sticky;
-  top: 24px;
-  z-index: 20;
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) auto;
-  gap: 20px;
-  align-items: center;
-  padding: 20px 22px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 28px;
-  background:
-    linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(9, 18, 32, 0.92));
-  box-shadow: 0 20px 50px rgba(2, 6, 23, 0.28);
+    position: sticky;
+    top: 24px;
+    z-index: 20;
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) auto;
+    gap: 20px;
+    align-items: center;
+    padding: 20px 22px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 28px;
+    background:
+        linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 30%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(9, 18, 32, 0.92));
+    box-shadow: 0 20px 50px rgba(2, 6, 23, 0.28);
 }
 
 .appBarBrand {
-  display: grid;
-  gap: 10px;
+    display: grid;
+    gap: 10px;
 }
 
 .appBarBrand h1 {
-  font-size: clamp(2rem, 3vw, 3rem);
-  line-height: 1.02;
+    font-size: clamp(2rem, 3vw, 3rem);
+    line-height: 1.02;
 }
 
 .copy,
@@ -127,8 +127,8 @@ p {
 .mediaQueueMeta,
 .subtitleMeta,
 .shareValue {
-  color: var(--text-soft);
-  line-height: 1.6;
+    color: var(--text-soft);
+    line-height: 1.6;
 }
 
 .eyebrow,
@@ -137,130 +137,130 @@ p {
 .metricLabel,
 .fieldLabel,
 .shareLabel {
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    font-size: 0.72rem;
 }
 
 .eyebrow,
 .sectionEyebrow {
-  color: #ffc35c;
+    color: #ffc35c;
 }
 
 .viewToggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(255, 255, 255, 0.04);
-  justify-self: end;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.04);
+    justify-self: end;
 }
 
 .toggleButton {
-  min-width: 172px;
-  border: none;
-  border-radius: 999px;
-  padding: 12px 18px;
-  color: var(--text-soft);
-  background: transparent;
-  transition:
-    background 150ms ease,
-    color 150ms ease,
-    transform 150ms ease,
-    box-shadow 150ms ease;
+    min-width: 172px;
+    border: none;
+    border-radius: 999px;
+    padding: 12px 18px;
+    color: var(--text-soft);
+    background: transparent;
+    transition:
+        background 150ms ease,
+        color 150ms ease,
+        transform 150ms ease,
+        box-shadow 150ms ease;
 }
 
 .toggleButton:hover {
-  transform: translateY(-1px);
+    transform: translateY(-1px);
 }
 
 .toggleButton.active {
-  color: #08101d;
-  background: linear-gradient(135deg, #f7b733, #ff8f3d);
-  box-shadow: 0 10px 24px rgba(249, 115, 22, 0.32);
+    color: #08101d;
+    background: linear-gradient(135deg, #f7b733, #ff8f3d);
+    box-shadow: 0 10px 24px rgba(249, 115, 22, 0.32);
 }
 
 .appBarStatus {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
 }
 
 .appPill,
 .pill,
 .mediaQueueBadge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    white-space: nowrap;
 }
 
 .appPill {
-  padding: 8px 12px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-soft);
-  font-size: 0.82rem;
+    padding: 8px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-soft);
+    font-size: 0.82rem;
 }
 
 .viewHero {
-  display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(340px, 1.05fr);
-  gap: 22px;
-  margin-top: 24px;
-  align-items: start;
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(340px, 1.05fr);
+    gap: 22px;
+    margin-top: 24px;
+    align-items: start;
 }
 
 .viewHeroCopy {
-  padding: 8px 4px 0;
-  display: grid;
-  gap: 12px;
+    padding: 8px 4px 0;
+    display: grid;
+    gap: 12px;
 }
 
 .viewHeroCopy h2 {
-  font-size: 1.7rem;
+    font-size: 1.7rem;
 }
 
 .statusRail,
 .metricsGrid,
 .fieldGrid {
-  display: grid;
-  gap: 14px;
+    display: grid;
+    gap: 14px;
 }
 
 .statusRail {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .workspaceGrid {
-  display: grid;
-  gap: 20px;
-  margin-top: 24px;
-  align-items: start;
+    display: grid;
+    gap: 20px;
+    margin-top: 24px;
+    align-items: start;
 }
 
 .workspaceColumn {
-  display: grid;
-  gap: 20px;
-  align-content: start;
-  min-width: 0;
+    display: grid;
+    gap: 20px;
+    align-content: start;
+    min-width: 0;
 }
 
 .operationsGrid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .monitoringGrid {
-  grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1fr) minmax(320px, 0.95fr);
+    grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1fr) minmax(320px, 0.95fr);
 }
 
 .monitorHostSummary {
-  display: grid;
-  gap: 18px;
+    display: grid;
+    gap: 18px;
 }
 
 .surfacePanel,
@@ -274,26 +274,26 @@ p {
 .subtitleCard,
 .progressItem,
 .statusCard {
-  border-radius: 24px;
+    border-radius: 24px;
 }
 
 .surfacePanel {
-  padding: 22px;
-  border: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(14, 25, 43, 0.88), rgba(10, 19, 35, 0.84));
+    padding: 22px;
+    border: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, rgba(14, 25, 43, 0.88), rgba(10, 19, 35, 0.84));
 }
 
 .accentPanel {
-  background:
-    radial-gradient(circle at top right, rgba(245, 158, 11, 0.16), transparent 28%),
-    linear-gradient(180deg, rgba(18, 31, 54, 0.96), rgba(12, 23, 40, 0.92));
+    background:
+        radial-gradient(circle at top right, rgba(245, 158, 11, 0.16), transparent 28%),
+        linear-gradient(180deg, rgba(18, 31, 54, 0.96), rgba(12, 23, 40, 0.92));
 }
 
 .sectionHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
 }
 
 .sectionHeader h2,
@@ -304,12 +304,12 @@ p {
 .progressTitle,
 .statusCard strong,
 .metricCard strong {
-  color: var(--text-main);
+    color: var(--text-main);
 }
 
 .sectionHeader h2 {
-  margin-top: 10px;
-  font-size: 1.5rem;
+    margin-top: 10px;
+    font-size: 1.5rem;
 }
 
 .statusCard,
@@ -320,13 +320,13 @@ p {
 .participantCard,
 .subtitleCard,
 .progressItem {
-  border: 1px solid var(--line-soft);
-  background: var(--bg-card);
+    border: 1px solid var(--line-soft);
+    background: var(--bg-card);
 }
 
 .statusCard,
 .metricCard {
-  padding: 16px;
+    padding: 16px;
 }
 
 .statusCard strong,
@@ -336,158 +336,159 @@ p {
 .subtitleTitle,
 .participantName,
 .progressTitle {
-  display: block;
-  margin-top: 8px;
-  font-size: 1rem;
-  font-weight: 700;
-  word-break: break-word;
+    display: block;
+    margin-top: 8px;
+    font-size: 1rem;
+    font-weight: 700;
+    word-break: break-word;
 }
 
 .statusLabel,
 .metricLabel,
 .fieldLabel,
 .shareLabel {
-  color: var(--text-muted);
+    color: var(--text-muted);
 }
 
 .notice {
-  margin-top: 18px;
-  padding: 14px 18px;
-  border: 1px solid transparent;
+    margin-top: 18px;
+    padding: 14px 18px;
+    border: 1px solid transparent;
 }
 
 .notice.success {
-  background: rgba(34, 197, 94, 0.14);
-  border-color: rgba(34, 197, 94, 0.18);
-  color: #dcfce7;
+    background: rgba(34, 197, 94, 0.14);
+    border-color: rgba(34, 197, 94, 0.18);
+    color: #dcfce7;
 }
 
 .notice.error,
 .inlineError,
 .emptyState.errorState {
-  background: rgba(239, 68, 68, 0.16);
-  border-color: rgba(248, 113, 113, 0.18);
-  color: #fecaca;
+    background: rgba(239, 68, 68, 0.16);
+    border-color: rgba(248, 113, 113, 0.18);
+    color: #fecaca;
 }
 
 .hiddenInput {
-  display: none;
+    display: none;
 }
 
 .primaryButton,
 .secondaryButton,
 .ghostButton,
 .selectInput {
-  border-radius: 999px;
-  padding: 12px 18px;
-  transition:
-    transform 150ms ease,
-    background 150ms ease,
-    border-color 150ms ease,
-    color 150ms ease;
+    border-radius: 999px;
+    padding: 12px 18px;
+    transition:
+        transform 150ms ease,
+        background 150ms ease,
+        border-color 150ms ease,
+        color 150ms ease;
 }
 
 .primaryButton,
 .secondaryButton,
 .ghostButton {
-  border: none;
+    border: none;
 }
 
 .primaryButton:hover,
 .secondaryButton:hover,
 .ghostButton:hover {
-  transform: translateY(-1px);
+    transform: translateY(-1px);
 }
 
 .primaryButton {
-  color: #08101d;
-  font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-amber), var(--accent-orange));
+    color: #08101d;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--accent-amber), var(--accent-orange));
 }
 
 .secondaryButton {
-  color: #dbeafe;
-  border: 1px solid rgba(96, 165, 250, 0.32);
-  background: rgba(59, 130, 246, 0.16);
+    color: #dbeafe;
+    border: 1px solid rgba(96, 165, 250, 0.32);
+    background: rgba(59, 130, 246, 0.16);
 }
 
 .secondaryButton.dangerButton {
-  color: #fecaca;
-  border-color: rgba(248, 113, 113, 0.3);
-  background: rgba(239, 68, 68, 0.14);
+    color: #fecaca;
+    border-color: rgba(248, 113, 113, 0.3);
+    background: rgba(239, 68, 68, 0.14);
 }
 
 .ghostButton {
-  color: var(--text-main);
-  border: 1px solid rgba(226, 232, 240, 0.12);
-  background: rgba(255, 255, 255, 0.05);
+    color: var(--text-main);
+    border: 1px solid rgba(226, 232, 240, 0.12);
+    background: rgba(255, 255, 255, 0.05);
 }
+
 .selectInput {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--line-strong);
-  background: rgba(10, 18, 33, 0.88);
-  color: var(--text-main);
+    width: 100%;
+    min-width: 0;
+    border: 1px solid var(--line-strong);
+    background: rgba(10, 18, 33, 0.88);
+    color: var(--text-main);
 }
 
 select.selectInput {
-  appearance: none;
-  padding-right: 48px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23e2e8f0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 16px center;
-  background-size: 14px;
+    appearance: none;
+    padding-right: 48px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23e2e8f0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    background-size: 14px;
 }
 
 .actionsRow,
 .secondaryActionsRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
 }
 
 .actionsRow {
-  margin-top: 18px;
+    margin-top: 18px;
 }
 
 .secondaryActionsRow {
-  margin-top: 16px;
+    margin-top: 16px;
 }
 
 .fieldGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 18px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 18px;
 }
 
 .field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .fieldSpan {
-  grid-column: 1 / -1;
+    grid-column: 1 / -1;
 }
 
 .emptyState,
 .infoCard,
 .shareCard {
-  margin-top: 18px;
-  padding: 18px 20px;
+    margin-top: 18px;
+    padding: 18px 20px;
 }
 
 .compactInfoCard {
-  background: var(--bg-card);
+    background: var(--bg-card);
 }
 
 .emphasisCard {
-  background:
-    linear-gradient(135deg, rgba(34, 211, 238, 0.08), transparent 40%),
-    var(--bg-card-strong);
+    background:
+        linear-gradient(135deg, rgba(34, 211, 238, 0.08), transparent 40%),
+        var(--bg-card-strong);
 }
 
 .warningText {
-  color: #fde68a;
+    color: #fde68a;
 }
 
 .mediaQueue,
@@ -495,273 +496,277 @@ select.selectInput {
 .subtitleList,
 .shareList,
 .participantList {
-  display: grid;
-  gap: 14px;
-  margin-top: 18px;
+    display: grid;
+    gap: 14px;
+    margin-top: 18px;
 }
 
 .mediaQueueItem {
-  width: 100%;
-  padding: 18px;
-  color: var(--text-main);
-  text-align: left;
+    width: 100%;
+    padding: 18px;
+    color: var(--text-main);
+    text-align: left;
 }
 
 .mediaQueueItem.selected {
-  border-color: rgba(245, 158, 11, 0.76);
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.26);
-  background:
-    linear-gradient(135deg, rgba(245, 158, 11, 0.1), transparent 36%),
-    var(--bg-card-strong);
+    border-color: rgba(245, 158, 11, 0.76);
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.26);
+    background:
+        linear-gradient(135deg, rgba(245, 158, 11, 0.1), transparent 36%),
+        var(--bg-card-strong);
 }
 
 .subtitleCard,
 .participantCard,
 .progressItem {
-  padding: 18px;
+    padding: 18px;
 }
 
 .subtitleCard {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
 }
 
 .participantCard {
-  display: grid;
-  gap: 14px;
+    display: grid;
+    gap: 14px;
 }
 
 .mediaQueueHeader,
 .participantHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
 }
 
 .mediaQueueBadge,
 .pill {
-  padding: 6px 10px;
-  font-size: 0.78rem;
+    padding: 6px 10px;
+    font-size: 0.78rem;
 }
 
 .mediaQueueBadge {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
 }
 
 .mediaQueueBadge.ready {
-  background: rgba(34, 197, 94, 0.16);
-  color: #dcfce7;
+    background: rgba(34, 197, 94, 0.16);
+    color: #dcfce7;
 }
 
 .mediaQueueBadge.processing,
 .mediaQueueBadge.pending {
-  background: rgba(96, 165, 250, 0.16);
-  color: #dbeafe;
+    background: rgba(96, 165, 250, 0.16);
+    color: #dbeafe;
 }
 
 .mediaQueueBadge.error {
-  background: rgba(239, 68, 68, 0.18);
-  color: #fecaca;
+    background: rgba(239, 68, 68, 0.18);
+    color: #fecaca;
 }
 
 .pill {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e2e8f0;
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
 }
 
 .activePill {
-  background: rgba(34, 197, 94, 0.16);
-  color: #dcfce7;
+    background: rgba(34, 197, 94, 0.16);
+    color: #dcfce7;
 }
 
 .mutedPill {
-  background: rgba(148, 163, 184, 0.16);
-  color: #cbd5e1;
+    background: rgba(148, 163, 184, 0.16);
+    color: #cbd5e1;
 }
 
 .progressItem {
-  display: flex;
-  gap: 14px;
+    display: flex;
+    gap: 14px;
 }
 
 .progressDot {
-  width: 12px;
-  height: 12px;
-  margin-top: 6px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.55);
-  flex: none;
+    width: 12px;
+    height: 12px;
+    margin-top: 6px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.55);
+    flex: none;
 }
 
 .progressItem.complete .progressDot {
-  background: var(--accent-green);
+    background: var(--accent-green);
 }
 
 .progressItem.active .progressDot {
-  background: #60a5fa;
-  box-shadow: 0 0 0 5px rgba(96, 165, 250, 0.16);
+    background: #60a5fa;
+    box-shadow: 0 0 0 5px rgba(96, 165, 250, 0.16);
 }
 
 .progressItem.error .progressDot {
-  background: var(--accent-red);
+    background: var(--accent-red);
 }
 
 .participantIdentity {
-  min-width: 0;
+    min-width: 0;
 }
 
 .participantName,
 .participantMeta,
 .subtitleTitle,
 .subtitleMeta {
-  margin: 0;
+    margin: 0;
 }
 
 .participantTimeline {
-  display: grid;
-  gap: 8px;
+    display: grid;
+    gap: 8px;
 }
 
 .participantBadges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
 }
 
 .shareValue,
 .fontMono {
-  font-family: Consolas, 'Courier New', monospace;
+    font-family: Consolas, 'Courier New', monospace;
 }
 
 .shareValue {
-  margin: 12px 0 14px;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+    margin: 12px 0 14px;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
-.shareList,
+.shareList {
+    grid-template-columns: 1fr;
+}
+
 .participantGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .denseMetricsGrid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .compactProgressList {
-  grid-template-columns: 1fr;
+    grid-template-columns: 1fr;
 }
 
 .inlineError {
-  margin-top: 18px;
-  padding: 14px 16px;
-  border-radius: 18px;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border-radius: 18px;
 }
 
 .copyToast {
-  position: fixed;
-  right: 28px;
-  bottom: 28px;
-  z-index: 30;
-  padding: 14px 18px;
-  border-radius: 16px;
-  border: 1px solid rgba(34, 197, 94, 0.26);
-  background: rgba(15, 23, 42, 0.96);
-  color: #dcfce7;
-  box-shadow: 0 18px 36px rgba(2, 6, 23, 0.35);
-  animation: toast-in 180ms ease-out;
+    position: fixed;
+    right: 28px;
+    bottom: 28px;
+    z-index: 30;
+    padding: 14px 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(34, 197, 94, 0.26);
+    background: rgba(15, 23, 42, 0.96);
+    color: #dcfce7;
+    box-shadow: 0 18px 36px rgba(2, 6, 23, 0.35);
+    animation: toast-in 180ms ease-out;
 }
 
 @keyframes toast-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
 
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 @media (max-width: 1240px) {
-  .operationsGrid,
-  .monitoringGrid,
-  .viewHero,
-  .statusRail {
-    grid-template-columns: 1fr;
-  }
 
-  .workspaceColumn {
-    display: contents;
-  }
+    .operationsGrid,
+    .monitoringGrid,
+    .viewHero,
+    .statusRail {
+        grid-template-columns: 1fr;
+    }
+
+    .workspaceColumn {
+        display: contents;
+    }
 }
 
 @media (max-width: 900px) {
-  .shell {
-    padding: 16px;
-  }
+    .shell {
+        padding: 16px;
+    }
 
-  .panel {
-    padding: 18px;
-    border-radius: 26px;
-  }
+    .panel {
+        padding: 18px;
+        border-radius: 26px;
+    }
 
-  .appBar {
-    top: 16px;
-    grid-template-columns: 1fr;
-  }
+    .appBar {
+        top: 16px;
+        grid-template-columns: 1fr;
+    }
 
-  .viewToggle {
-    justify-self: stretch;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+    .viewToggle {
+        justify-self: stretch;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 
-  .toggleButton {
-    min-width: 0;
-  }
+    .toggleButton {
+        min-width: 0;
+    }
 
-  .shareList,
-  .participantGrid,
-  .metricsGrid,
-  .denseMetricsGrid,
-  .fieldGrid,
-  .statusRail {
-    grid-template-columns: 1fr;
-  }
+    .shareList,
+    .participantGrid,
+    .metricsGrid,
+    .denseMetricsGrid,
+    .fieldGrid,
+    .statusRail {
+        grid-template-columns: 1fr;
+    }
 }
 
 @media (max-width: 640px) {
-  .appBarBrand h1 {
-    font-size: 2rem;
-  }
+    .appBarBrand h1 {
+        font-size: 2rem;
+    }
 
-  .surfacePanel {
-    padding: 18px;
-  }
+    .surfacePanel {
+        padding: 18px;
+    }
 
-  .sectionHeader,
-  .mediaQueueHeader,
-  .participantHeader,
-  .subtitleCard {
-    flex-direction: column;
-    align-items: stretch;
-  }
+    .sectionHeader,
+    .mediaQueueHeader,
+    .participantHeader,
+    .subtitleCard {
+        flex-direction: column;
+        align-items: stretch;
+    }
 
-  .participantBadges {
-    justify-content: flex-start;
-  }
+    .participantBadges {
+        justify-content: flex-start;
+    }
 
-  .copyToast {
-    right: 16px;
-    bottom: 16px;
-    left: 16px;
-  }
+    .copyToast {
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+    }
 }
