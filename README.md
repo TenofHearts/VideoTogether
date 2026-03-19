@@ -130,18 +130,17 @@ Important variables:
   - controls whether the host startup script uses Docker for the server
   - default: `false`
 - `PORT`
-  - local server port
-  - default: `3000`
-- `API_BASE_URL`
-  - API base URL used by the desktop app and helper scripts
-  - default: `http://localhost:3000`
-- `PUBLIC_BASE_URL`
-  - public-facing base URL used when generating share links
-  - for local-only usage, this is usually the same as `API_BASE_URL`
-- `WEB_URL`
-  - frontend URL used for room links
-  - in local production mode this is usually `http://localhost:3000`
-  - in development mode this is usually `http://localhost:5173`
+  - local server port used by the production-like host flow
+  - default: `3003`
+- `PUBLIC_PROTOCOL`
+  - protocol used when deriving public share URLs
+  - default: `http`
+- `PUBLIC_HOST`
+  - hostname used when deriving public share URLs
+  - default: `localhost`
+- `WEB_DEV_PORT`
+  - Vite development server port used by `npm run dev`
+  - default: `5173`
 - `LAN_IP`
   - fixed IPv4 used by the desktop app when generating LAN room URLs
   - set this to the exact IPv4 you want to expose, such as your ZeroTier IPv4
@@ -153,9 +152,9 @@ Important variables:
 Current `.env.example` defaults assume:
 
 - development web URL: `http://localhost:5173`
-- production-like local host flow: `http://localhost:3000`
+- production-like local host flow: `http://localhost:3003`
 - Docker disabled by default
-- LAN URL generation uses the fixed `LAN_IP` value
+- LAN URL generation uses only the explicit `LAN_IP` value
 
 ### Install Dependencies
 

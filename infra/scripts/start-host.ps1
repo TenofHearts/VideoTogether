@@ -54,7 +54,7 @@ function Get-EnvMap([string]$Path) {
     }
 
     $key = $trimmed.Substring(0, $separatorIndex).Trim()
-    $value = $trimmed.Substring($separatorIndex + 1).Trim()
+    $value = $trimmed.Substring($separatorIndex + 1).Trim().Trim('"').Trim("'")
     $map[$key] = $value
   }
 
@@ -83,8 +83,19 @@ function Stop-ProcessTree([int]$ProcessId) {
   $taskkillCommand = Get-Command taskkill.exe -ErrorAction SilentlyContinue
 
   if ($taskkillCommand) {
-    & $taskkillCommand.Source /PID $ProcessId /T /F *> $null
-    return
+    $taskkillInvocation = "taskkill.exe /PID $ProcessId /T /F >nul 2>&1"
+    & cmd.exe /d /c $taskkillInvocation
+    $taskkillExitCode = $LASTEXITCODE
+
+    if ($taskkillExitCode -eq 0) {
+      return
+    }
+
+    if (-not (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue)) {
+      return
+    }
+
+    throw "Failed to stop process tree $ProcessId with taskkill exit code $taskkillExitCode."
   }
 
   Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
@@ -184,6 +195,14 @@ function Wait-ForNgrokPublicUrl([int]$TimeoutSeconds, [int]$ProcessId) {
   return $null
 }
 
+function Get-LogTail([string]$Path, [int]$LineCount = 20) {
+  if (-not (Test-Path $Path)) {
+    return ''
+  }
+
+  return (Get-Content $Path | Select-Object -Last $LineCount) -join [Environment]::NewLine
+}
+
 $envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
   Join-Path $repoRoot '.env'
 } else {
@@ -193,16 +212,16 @@ $envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
 $envMap = Get-EnvMap $envPath
 $useDocker = Test-EnvFlag (Get-EnvValue $envMap 'USE_DOCKER' 'false')
 $serverPort = Get-EnvValue $envMap 'PORT' '3000'
-$apiBaseUrl = Get-EnvValue $envMap 'API_BASE_URL' 'http://localhost:3000'
+$publicProtocol = Get-EnvValue $envMap 'PUBLIC_PROTOCOL' (Get-EnvValue $envMap 'APP_PROTOCOL' 'http')
+$publicHost = Get-EnvValue $envMap 'PUBLIC_HOST' (Get-EnvValue $envMap 'APP_HOST' 'localhost')
+$localApiBaseUrl = "http://localhost:$serverPort"
+$apiBaseUrl = Get-EnvValue $envMap 'API_BASE_URL' $localApiBaseUrl
 $ngrokEnabled = Test-EnvFlag (Get-EnvValue $envMap 'NGROK_ENABLED' 'false')
-$publicBaseUrl = Get-EnvValue $envMap 'PUBLIC_BASE_URL' $apiBaseUrl
+$publicBaseUrl = Get-EnvValue $envMap 'PUBLIC_BASE_URL' "${publicProtocol}://${publicHost}:$serverPort"
 $rawWebUrl = Get-EnvValue $envMap 'WEB_URL' $publicBaseUrl
+$resolvedViteApiBaseUrl = Get-EnvValue $envMap 'VITE_API_BASE_URL' $publicBaseUrl
 $ngrokPublicUrl = $null
-$serverHealthUrl = if ($apiBaseUrl.EndsWith('/')) {
-  "${apiBaseUrl}health"
-} else {
-  "${apiBaseUrl}/health"
-}
+$serverHealthUrl = "http://127.0.0.1:$serverPort/health"
 
 if ($ngrokEnabled) {
   if (-not (Get-Command ngrok -ErrorAction SilentlyContinue)) {
@@ -247,6 +266,7 @@ if ($ngrokEnabled) {
 
   $publicBaseUrl = $ngrokPublicUrl
   $rawWebUrl = $ngrokPublicUrl
+  $resolvedViteApiBaseUrl = $ngrokPublicUrl
 } else {
   Stop-TrackedProcess -PidPath $ngrokPidPath -Label 'ngrok'
 }
@@ -264,9 +284,9 @@ $runtimeEnv = [ordered]@{
   API_BASE_URL = $apiBaseUrl
   PUBLIC_BASE_URL = $publicBaseUrl
   WEB_URL = $webUrl
-  WEB_ORIGIN = $webUrl
+  WEB_ORIGIN = Get-EnvValue $envMap 'WEB_ORIGIN' $webUrl
   LAN_IP = Get-EnvValue $envMap 'LAN_IP' ''
-  VITE_API_BASE_URL = $publicBaseUrl
+  VITE_API_BASE_URL = $resolvedViteApiBaseUrl
   ROOM_TOKEN_BYTES = Get-EnvValue $envMap 'ROOM_TOKEN_BYTES' '32'
   FFMPEG_PATH = Get-EnvValue $envMap 'FFMPEG_PATH' 'ffmpeg'
   FFPROBE_PATH = Get-EnvValue $envMap 'FFPROBE_PATH' 'ffprobe'
@@ -290,7 +310,7 @@ if ($useDocker) {
   $composeEnv = [ordered]@{
     NODE_ENV = $runtimeEnv.NODE_ENV
     HOST = '0.0.0.0'
-    PORT = '3000'
+    PORT = $serverPort
     PUBLIC_BASE_URL = $runtimeEnv.PUBLIC_BASE_URL
     WEB_URL = $runtimeEnv.WEB_URL
     WEB_ORIGIN = $runtimeEnv.WEB_ORIGIN
@@ -310,7 +330,7 @@ if ($useDocker) {
 
   ($composeEnv.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) | Set-Content $composeEnvPath
 
-  Write-Host 'Starting Dockerized server on http://localhost:3000 ...'
+  Write-Host "Starting Dockerized server on http://localhost:$serverPort ..."
   & docker compose --env-file $composeEnvPath -f infra/docker-compose.yml up -d --build app-server
 
   if ($LASTEXITCODE -ne 0) {
@@ -338,7 +358,7 @@ if ($useDocker) {
     )
 
     foreach ($entry in $runtimeEnv.GetEnumerator()) {
-      $escapedValue = $entry.Value.Replace("'", "''")
+      $escapedValue = ([string]$entry.Value).Replace("'", "''")
       $scriptLines += "`$env:$($entry.Key) = '$escapedValue'"
     }
 
@@ -352,7 +372,7 @@ if ($useDocker) {
 
     $shellExecutable = Get-ShellExecutable
 
-    Write-Host 'Starting local production server on http://localhost:3000 ...'
+    Write-Host "Starting local production server on http://localhost:$serverPort ..."
     $serverProcess = Start-Process $shellExecutable `
       -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $serverScriptPath) `
       -WorkingDirectory $repoRoot `
@@ -361,9 +381,10 @@ if ($useDocker) {
     $serverProcess.Id | Set-Content $serverPidPath
 
     if (-not (Wait-ForServer -Url $serverHealthUrl -TimeoutSeconds 20 -ProcessId $serverProcess.Id)) {
+      $logTail = Get-LogTail $serverLogPath
       Stop-ProcessTree -ProcessId $serverProcess.Id
       Remove-Item $serverPidPath -Force -ErrorAction SilentlyContinue
-      throw "Local server failed to start. See $serverLogPath for details."
+      throw "Local server failed to start. See $serverLogPath for details.`n$logTail"
     }
   } else {
     Write-Host "Local server already running with PID $($existingProcess.Id)."

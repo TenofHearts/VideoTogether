@@ -46,7 +46,10 @@ const workspaceRoot =
   process.env.VIDEOSHARE_WORKSPACE_DIR?.trim() ||
   findWorkspaceRoot(workingDirectory);
 const detectedRuntimeRoot = isSea() ? workingDirectory : undefined;
-const runtimeRoot = process.env.VIDEOSHARE_RUNTIME_DIR?.trim() || detectedRuntimeRoot || workspaceRoot;
+const runtimeRoot =
+  process.env.VIDEOSHARE_RUNTIME_DIR?.trim() ||
+  detectedRuntimeRoot ||
+  workspaceRoot;
 
 function getDefaultStoragePath(...segments: string[]): string {
   return resolve(runtimeRoot, 'storage', ...segments);
@@ -87,22 +90,33 @@ function parseEnvFile(contents: string): Record<string, string> {
         const value = line
           .slice(separatorIndex + 1)
           .trim()
-          .replace(/^['"]|['"]$/g, '');
+          .replace(/^['\"]|['\"]$/g, '');
 
         return key.length > 0 ? [[key, value]] : [];
       })
   );
 }
 
+function getNonEmptyValue(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildLocalUrl(protocol: string, host: string, port: number): string {
+  return `${protocol}://${host}:${port}`;
+}
+
 function loadFileEnv(): Record<string, string> {
   const explicitEnvFile = process.env.VIDEOSHARE_ENV_FILE?.trim();
-  const runtimeDirectory = process.env.VIDEOSHARE_RUNTIME_DIR?.trim() || detectedRuntimeRoot;
+  const runtimeDirectory =
+    process.env.VIDEOSHARE_RUNTIME_DIR?.trim() || detectedRuntimeRoot;
 
   const candidates = [
     explicitEnvFile,
     runtimeDirectory ? resolve(runtimeDirectory, '.env') : undefined,
     runtimeDirectory ? resolve(runtimeDirectory, '.env.example') : undefined,
-    resolve(workspaceRoot, '.env')
+    resolve(workspaceRoot, '.env'),
+    resolve(workspaceRoot, '.env.example')
   ].filter((value): value is string => Boolean(value));
 
   for (const candidate of candidates) {
@@ -122,6 +136,11 @@ const envSchema = z.object({
     .default('development'),
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3000),
+  PUBLIC_PROTOCOL: z.string().optional(),
+  PUBLIC_HOST: z.string().optional(),
+  APP_PROTOCOL: z.string().optional(),
+  APP_HOST: z.string().optional(),
+  WEB_DEV_PORT: z.coerce.number().int().positive().default(5173),
   WEB_URL: z.string().optional(),
   WEB_ORIGIN: z.string().optional(),
   WEB_DIST_DIR: z.string().optional(),
@@ -146,19 +165,31 @@ export function loadEnv() {
     ...loadFileEnv(),
     ...process.env
   });
+  const publicProtocol =
+    getNonEmptyValue(parsedEnv.PUBLIC_PROTOCOL) ??
+    getNonEmptyValue(parsedEnv.APP_PROTOCOL) ??
+    'http';
+  const publicHost =
+    getNonEmptyValue(parsedEnv.PUBLIC_HOST) ??
+    getNonEmptyValue(parsedEnv.APP_HOST) ??
+    'localhost';
   const databasePath = resolveDatabasePath(parsedEnv.DATABASE_URL);
+  const defaultPublicBaseUrl = buildLocalUrl(
+    publicProtocol,
+    publicHost,
+    parsedEnv.PORT
+  );
   const publicBaseUrl =
-    parsedEnv.PUBLIC_BASE_URL && parsedEnv.PUBLIC_BASE_URL.length > 0
-      ? parsedEnv.PUBLIC_BASE_URL
-      : `http://localhost:${parsedEnv.PORT}`;
+    getNonEmptyValue(parsedEnv.PUBLIC_BASE_URL) ?? defaultPublicBaseUrl;
+  const defaultDevWebUrl = buildLocalUrl(
+    publicProtocol,
+    publicHost,
+    parsedEnv.WEB_DEV_PORT
+  );
   const webOrigin =
-    parsedEnv.WEB_URL && parsedEnv.WEB_URL.length > 0
-      ? parsedEnv.WEB_URL
-      : parsedEnv.WEB_ORIGIN && parsedEnv.WEB_ORIGIN.length > 0
-        ? parsedEnv.WEB_ORIGIN
-        : parsedEnv.NODE_ENV === 'production'
-          ? publicBaseUrl
-          : 'http://localhost:5173';
+    getNonEmptyValue(parsedEnv.WEB_URL) ??
+    getNonEmptyValue(parsedEnv.WEB_ORIGIN) ??
+    (parsedEnv.NODE_ENV === 'production' ? publicBaseUrl : defaultDevWebUrl);
 
   return {
     nodeEnv: parsedEnv.NODE_ENV,
