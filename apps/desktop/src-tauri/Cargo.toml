@@ -1,5 +1,5 @@
 [package]
-name = "videoshare-desktop"
+name = "VideoTogether"
 version = "1.3.0"
 description = "VideoTogether desktop shell"
 authors = ["ASUS"]

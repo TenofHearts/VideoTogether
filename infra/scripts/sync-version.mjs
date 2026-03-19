@@ -29,7 +29,7 @@ updateJson('apps/desktop/src-tauri/tauri.conf.json');
 const cargoPath = path.join(rootDir, 'apps/desktop/src-tauri/Cargo.toml');
 if (fs.existsSync(cargoPath)) {
     let cargo = fs.readFileSync(cargoPath, 'utf8');
-    cargo = cargo.replace(/(^name\s*=\s*"videoshare-desktop"\r?\nversion\s*=\s*)"[^"]+"/m, `$1"${version}"`);
+    cargo = cargo.replace(/(^name\s*=\s*"VideoTogether"\r?\nversion\s*=\s*)"[^"]+"/m, `$1"${version}"`);
     fs.writeFileSync(cargoPath, cargo);
     console.log('Updated apps/desktop/src-tauri/Cargo.toml');
 }
