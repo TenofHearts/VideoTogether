@@ -1,6 +1,6 @@
 [package]
 name = "videoshare-desktop"
-version = "1.2.2"
+version = "1.3.0"
 description = "VideoTogether desktop shell"
 authors = ["ASUS"]
 edition = "2021"
