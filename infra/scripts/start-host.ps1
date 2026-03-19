@@ -73,6 +73,11 @@ function Test-EnvFlag([string]$Value) {
   return @('1', 'true', 'yes', 'on') -contains $Value.ToLowerInvariant()
 }
 
+function Test-LoopbackHost([string]$Value) {
+  $normalized = $Value.Trim().ToLowerInvariant()
+  return @('localhost', '127.0.0.1', '::1', '[::1]') -contains $normalized
+}
+
 function Set-ProcessEnv($Variables) {
   foreach ($entry in $Variables.GetEnumerator()) {
     Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
@@ -211,6 +216,8 @@ $envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
 
 $envMap = Get-EnvMap $envPath
 $useDocker = Test-EnvFlag (Get-EnvValue $envMap 'USE_DOCKER' 'false')
+$configuredServerHost = Get-EnvValue $envMap 'HOST' '0.0.0.0'
+$serverHost = if (Test-LoopbackHost $configuredServerHost) { '0.0.0.0' } else { $configuredServerHost }
 $serverPort = Get-EnvValue $envMap 'PORT' '3000'
 $publicProtocol = Get-EnvValue $envMap 'PUBLIC_PROTOCOL' (Get-EnvValue $envMap 'APP_PROTOCOL' 'http')
 $publicHost = Get-EnvValue $envMap 'PUBLIC_HOST' (Get-EnvValue $envMap 'APP_HOST' 'localhost')
@@ -279,7 +286,7 @@ $webUrl = if ($rawWebUrl -match '^https?://(localhost|127\.0\.0\.1):(5173|5174)/
 
 $runtimeEnv = [ordered]@{
   NODE_ENV = 'production'
-  HOST = Get-EnvValue $envMap 'HOST' '0.0.0.0'
+  HOST = $serverHost
   PORT = $serverPort
   API_BASE_URL = $apiBaseUrl
   PUBLIC_BASE_URL = $publicBaseUrl

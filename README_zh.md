@@ -129,19 +129,22 @@ LAN_IP=10.x.x.x
 - `USE_DOCKER`
   - 控制主机启动脚本是否使用 Docker 启动 server
   - 默认 `false`
+- `HOST`
+  - server 监听地址
+  - 如果要让局域网或 ZeroTier 里的 guest 连进来，请使用 `0.0.0.0`
+  - 默认 `0.0.0.0`
 - `PORT`
   - 本地 server 监听端口
   - 默认 `3000`
-- `API_BASE_URL`
-  - 桌面端和辅助脚本使用的 API 地址
-  - 默认 `http://localhost:3000`
-- `PUBLIC_BASE_URL`
-  - 生成分享链接时使用的公开地址
-  - 本地使用时通常与 `API_BASE_URL` 相同
-- `WEB_URL`
-  - 房间链接使用的前端地址
-  - 本地生产模式下通常是 `http://localhost:3000`
-  - 开发模式下通常是 `http://localhost:5173`
+- `PUBLIC_PROTOCOL`
+  - 生成公开分享链接时使用的协议
+  - 默认 `http`
+- `PUBLIC_HOST`
+  - 生成公开分享链接时使用的主机名
+  - 默认 `localhost`
+- `WEB_DEV_PORT`
+  - `npm run dev` 时 Vite 开发服务器使用的端口
+  - 默认 `5173`
 - `LAN_IP`
   - 桌面端生成局域网房间链接时使用的固定 IPv4
   - 请把它设置成你明确要暴露的地址，比如 ZeroTier IPv4
@@ -224,6 +227,8 @@ npm run host:start -- -SkipDesktop
 - 本机 URL 和局域网 URL 复制
 
 如果你希望桌面端生成局域网 URL，请把 `LAN_IP` 设置成你想使用的准确 IPv4，例如你的 ZeroTier IPv4。应用不会自动探测局域网 IP。
+
+如果 host 本机能打开房间，但 guest 打不开，先检查 `HOST=0.0.0.0`，然后把桌面端里的 `LAN room URL` 发给 guest，而不是 `localhost` 链接。
 
 ### 3. 观看者如何使用
 

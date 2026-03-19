@@ -87,6 +87,7 @@ const RUNTIME_ENV_TEMPLATE_FILE_NAME: &str = ".env.example";
 fn default_release_env_template() -> String {
     DEFAULT_ENV_TEMPLATE
         .replace("NODE_ENV=development", "NODE_ENV=production")
+        .replace("HOST=127.0.0.1", "HOST=0.0.0.0")
         .replace("PORT=3003", "PORT=3000")
         .replace(
             "WEB_URL=http://localhost:5173",
@@ -457,7 +458,16 @@ fn get_release_setting(config: &HashMap<String, String>, key: &str) -> Option<St
 }
 
 #[cfg(not(debug_assertions))]
-fn resolve_release_server_port(preferred_port: &str) -> IoResult<String> {
+fn normalize_server_host(host: String) -> String {
+    if is_loopback_host(host.trim()) {
+        return SERVER_HOST.to_string();
+    }
+
+    host
+}
+
+#[cfg(not(debug_assertions))]
+fn resolve_release_server_port(server_host: &str, preferred_port: &str) -> IoResult<String> {
     let preferred_port = preferred_port.parse::<u16>().map_err(|error| {
         Error::new(
             ErrorKind::InvalidInput,
@@ -465,13 +475,13 @@ fn resolve_release_server_port(preferred_port: &str) -> IoResult<String> {
         )
     })?;
 
-    match TcpListener::bind((Ipv4Addr::LOCALHOST, preferred_port)) {
+    match TcpListener::bind((server_host, preferred_port)) {
         Ok(listener) => {
             drop(listener);
             Ok(preferred_port.to_string())
         }
         Err(error) if error.kind() == ErrorKind::AddrInUse => {
-            let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
+            let listener = TcpListener::bind((server_host, 0))?;
             let port = listener.local_addr()?.port();
             drop(listener);
             Ok(port.to_string())
@@ -692,11 +702,12 @@ fn setup_release_server_sidecar<R: Runtime>(app: &mut tauri::App<R>) -> IoResult
     env::set_var("VIDEOSHARE_RUNTIME_DIR", &runtime_dir);
 
     let release_config = read_runtime_env_file();
-    let server_host =
-        get_release_setting(&release_config, "HOST").unwrap_or_else(|| SERVER_HOST.to_string());
+    let server_host = normalize_server_host(
+        get_release_setting(&release_config, "HOST").unwrap_or_else(|| SERVER_HOST.to_string()),
+    );
     let preferred_server_port =
         get_release_setting(&release_config, "PORT").unwrap_or_else(|| SERVER_PORT.to_string());
-    let server_port = resolve_release_server_port(&preferred_server_port)?;
+    let server_port = resolve_release_server_port(&server_host, &preferred_server_port)?;
     let api_base_url = format!("http://localhost:{server_port}");
     let public_base_url = get_release_setting(&release_config, "PUBLIC_BASE_URL")
         .map(|url| remap_release_url_port(url, &preferred_server_port, &server_port))

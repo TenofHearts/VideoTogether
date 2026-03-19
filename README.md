@@ -129,6 +129,10 @@ Important variables:
 - `USE_DOCKER`
   - controls whether the host startup script uses Docker for the server
   - default: `false`
+- `HOST`
+  - server bind address
+  - use `0.0.0.0` if guests on your LAN or ZeroTier need to connect
+  - default: `0.0.0.0`
 - `PORT`
   - local server port used by the production-like host flow
   - default: `3000`
@@ -223,6 +227,8 @@ The desktop app also provides:
 - local URL and LAN URL copy actions
 
 If you want the desktop app to generate LAN URLs, set `LAN_IP` to the exact IPv4 you want to use, for example your ZeroTier IPv4. The app does not auto-detect LAN IPs.
+
+If the host can open the room locally but a guest cannot, first check that `HOST=0.0.0.0` and then send the guest the `LAN room URL` instead of a `localhost` URL.
 
 ### 3. Guest usage
 
