@@ -1398,6 +1398,41 @@ export default function App() {
                         No previous uploads yet. Import a movie to seed the dashboard.
                     </div>
                 )}
+
+                {isOperations && media && (
+                    <div className="actionsRow secondaryActionsRow">
+                        <button
+                            className="secondaryButton"
+                            disabled={
+                                uploadState === 'working' ||
+                                deleteState === 'working' ||
+                                hasActiveRoom
+                            }
+                            onClick={() => {
+                                void retryProcessing();
+                            }}
+                            type="button"
+                        >
+                            Retry processing
+                        </button>
+                        <button
+                            className="secondaryButton dangerButton"
+                            disabled={
+                                deleteState === 'working' || uploadState === 'working'
+                            }
+                            onClick={() => {
+                                void deleteSelectedMedia();
+                            }}
+                            type="button"
+                        >
+                            {deleteState === 'working'
+                                ? 'Deleting...'
+                                : deleteConfirmArmed
+                                  ? 'Confirm delete'
+                                  : 'Delete movie'}
+                        </button>
+                    </div>
+                )}
             </section>
         );
     }
@@ -1746,38 +1781,7 @@ export default function App() {
                             </div>
                         )}
 
-                        <div className="actionsRow secondaryActionsRow">
-                            <button
-                                className="secondaryButton"
-                                disabled={
-                                    uploadState === 'working' ||
-                                    deleteState === 'working' ||
-                                    hasActiveRoom
-                                }
-                                onClick={() => {
-                                    void retryProcessing();
-                                }}
-                                type="button"
-                            >
-                                Retry processing
-                            </button>
-                            <button
-                                className="secondaryButton dangerButton"
-                                disabled={
-                                    deleteState === 'working' || uploadState === 'working'
-                                }
-                                onClick={() => {
-                                    void deleteSelectedMedia();
-                                }}
-                                type="button"
-                            >
-                                {deleteState === 'working'
-                                    ? 'Deleting...'
-                                    : deleteConfirmArmed
-                                      ? 'Confirm delete'
-                                      : 'Delete movie'}
-                            </button>
-                        </div>
+
                     </>
                 ) : (
                     <div className="emptyState">
@@ -2303,20 +2307,30 @@ export default function App() {
 
                 {activeView === 'operations' ? (
                     <section className="workspaceGrid operationsGrid">
-                        {renderMediaLibrary('operations')}
-                        {renderImportMovieSection()}
-                        {renderSubtitlesSection()}
-                        {renderRoomControlsSection()}
-                        {renderShareSection()}
+                        <div className="workspaceColumn">
+                            {renderMediaLibrary('operations')}
+                            {renderImportMovieSection()}
+                            {renderSubtitlesSection()}
+                        </div>
+                        <div className="workspaceColumn">
+                            {renderRoomControlsSection()}
+                            {renderShareSection()}
+                        </div>
                     </section>
                 ) : (
                     <section className="workspaceGrid monitoringGrid">
-                        {renderMediaLibrary('monitoring')}
-                        {renderCurrentMovieSection()}
-                        {renderRoomOverviewSection()}
-                        {renderHostSummarySection()}
-                        {renderParticipantsSection()}
-                        {renderDiagnosticsSection()}
+                        <div className="workspaceColumn">
+                            {renderMediaLibrary('monitoring')}
+                            {renderHostSummarySection()}
+                            {renderParticipantsSection()}
+                        </div>
+                        <div className="workspaceColumn">
+                            {renderCurrentMovieSection()}
+                        </div>
+                        <div className="workspaceColumn">
+                            {renderRoomOverviewSection()}
+                            {renderDiagnosticsSection()}
+                        </div>
                     </section>
                 )}
             </section>

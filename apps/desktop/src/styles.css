@@ -243,32 +243,25 @@ p {
   align-items: start;
 }
 
+.workspaceColumn {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  min-width: 0;
+}
+
 .operationsGrid {
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.92fr) minmax(0, 1.08fr);
-  grid-template-areas:
-    'library subtitles controls'
-    'import subtitles share';
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .monitoringGrid {
   grid-template-columns: minmax(280px, 0.9fr) minmax(0, 1fr) minmax(320px, 0.95fr);
-  grid-template-areas:
-    'library movie overview'
-    'library host diagnostics'
-    'participants participants diagnostics';
 }
 
-.opsLibrary { grid-area: library; }
-.opsImport { grid-area: import; }
-.opsSubtitles { grid-area: subtitles; }
-.opsControls { grid-area: controls; }
-.opsShare { grid-area: share; }
-.monitorLibrary { grid-area: library; }
-.monitorCurrentMovie { grid-area: movie; }
-.monitorOverview { grid-area: overview; }
-.monitorHostSummary { grid-area: host; }
-.monitorParticipants { grid-area: participants; }
-.monitorDiagnostics { grid-area: diagnostics; }
+.monitorHostSummary {
+  display: grid;
+  gap: 18px;
+}
 
 .surfacePanel,
 .notice,
@@ -705,23 +698,8 @@ select.selectInput {
     grid-template-columns: 1fr;
   }
 
-  .operationsGrid {
-    grid-template-areas:
-      'library'
-      'import'
-      'subtitles'
-      'controls'
-      'share';
-  }
-
-  .monitoringGrid {
-    grid-template-areas:
-      'library'
-      'movie'
-      'overview'
-      'host'
-      'participants'
-      'diagnostics';
+  .workspaceColumn {
+    display: contents;
   }
 }
 
