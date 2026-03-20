@@ -15,7 +15,9 @@
         "title": "VideoTogether Host",
         "width": 1280,
         "height": 860,
-        "resizable": true
+        "resizable": true,
+        "decorations": false,
+        "maximized": true
       }
     ]
   },

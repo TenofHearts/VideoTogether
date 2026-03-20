@@ -71,6 +71,37 @@ const fallbackStatus: DesktopStatus = {
     tauri: 'ready'
 };
 
+function getSharedStoragePath(paths: string[]): string {
+    const normalizedPaths = paths
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .map((value) => value.replace(/\\/g, '/').replace(/\/+$/, ''));
+
+    if (normalizedPaths.length === 0) {
+        return 'Unknown';
+    }
+
+    let sharedPrefix = normalizedPaths[0];
+
+    for (const nextPath of normalizedPaths.slice(1)) {
+        while (sharedPrefix && !nextPath.startsWith(sharedPrefix)) {
+            sharedPrefix = sharedPrefix.slice(0, -1);
+        }
+    }
+
+    const lastSeparatorIndex = sharedPrefix.lastIndexOf('/');
+    const sharedDirectory =
+        lastSeparatorIndex >= 0 ? sharedPrefix.slice(0, lastSeparatorIndex) : sharedPrefix;
+
+    if (!sharedDirectory) {
+        return paths[0] ?? 'Unknown';
+    }
+
+    return paths[0]?.includes('\\')
+        ? sharedDirectory.replace(/\//g, '\\')
+        : sharedDirectory;
+}
+
 function formatDuration(durationMs: number | null): string {
     if (!durationMs || durationMs <= 0) {
         return 'Unknown duration';
@@ -278,6 +309,7 @@ async function readErrorMessage(
 export default function App() {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const subtitleInputRef = useRef<HTMLInputElement | null>(null);
+    const roomSubtitleFieldRef = useRef<HTMLDivElement | null>(null);
     const [activeView, setActiveView] = useState<DashboardView>('operations');
     const [status, setStatus] = useState<DesktopStatus | null>(null);
     const [health, setHealth] = useState<DiagnosticsState<ServiceHealth>>({
@@ -293,6 +325,7 @@ export default function App() {
     const [selectedRoomSubtitleId, setSelectedRoomSubtitleId] = useState<
         string | null
     >(null);
+    const [isRoomSubtitleMenuOpen, setIsRoomSubtitleMenuOpen] = useState(false);
     const [media, setMedia] = useState<Media | null>(null);
     const [monitoringMedia, setMonitoringMedia] = useState<Media | null>(null);
     const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
@@ -315,6 +348,8 @@ export default function App() {
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copyToast, setCopyToast] = useState<string | null>(null);
+    const [isWindowMaximized, setIsWindowMaximized] = useState(false);
+    const [isWindowFocused, setIsWindowFocused] = useState(true);
 
     const hasActiveRoom = room?.room.status === 'active';
     const localRoomPlayerUrl =
@@ -369,6 +404,17 @@ export default function App() {
     const selectedSubtitle =
         subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ??
         null;
+    const roomSubtitleOptions = [
+        { value: '__off__', label: 'No subtitle' },
+        ...subtitles.map((subtitle) => ({
+            value: subtitle.id,
+            label: `${subtitle.label} (${subtitle.format})`
+        }))
+    ];
+    const selectedRoomSubtitleOption =
+        roomSubtitleOptions.find(
+            (option) => option.value === (selectedRoomSubtitleId ?? '__off__')
+        ) ?? roomSubtitleOptions[0];
     const activeRoomSubtitle =
         room?.subtitles.find(
             (subtitle) => subtitle.id === room.room.activeSubtitleId
@@ -385,6 +431,14 @@ export default function App() {
     const monitoringStatusText = monitoringTarget
         ? getStatusText(monitoringTarget.status)
         : 'No target selected';
+    const storageFolderPath =
+        systemStatus.kind === 'success'
+            ? getSharedStoragePath([
+                systemStatus.data.storage.mediaDir,
+                systemStatus.data.storage.hlsDir,
+                systemStatus.data.storage.subtitleDir
+            ])
+            : 'Unknown';
     const shareLinks: ShareLink[] = [];
 
     if (room) {
@@ -553,6 +607,49 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        let cancelled = false;
+        let unlisteners: Array<() => void> = [];
+
+        async function setupWindowChrome() {
+            if (!(window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+                return;
+            }
+
+            const { getCurrentWindow } = await import('@tauri-apps/api/window');
+            const appWindow = getCurrentWindow();
+            await appWindow.setDecorations(false);
+
+            const [maximized, focused] = await Promise.all([
+                appWindow.isMaximized(),
+                appWindow.isFocused()
+            ]);
+
+            if (cancelled) {
+                return;
+            }
+
+            setIsWindowMaximized(maximized);
+            setIsWindowFocused(focused);
+
+            unlisteners = [
+                await appWindow.onResized(async () => {
+                    setIsWindowMaximized(await appWindow.isMaximized());
+                }),
+                await appWindow.onFocusChanged(({ payload }) => {
+                    setIsWindowFocused(payload);
+                })
+            ];
+        }
+
+        void setupWindowChrome().catch(() => undefined);
+
+        return () => {
+            cancelled = true;
+            unlisteners.forEach((unlisten) => unlisten());
+        };
+    }, []);
+
+    useEffect(() => {
         if (!status) {
             return;
         }
@@ -656,6 +753,26 @@ export default function App() {
             window.clearInterval(timer);
         };
     }, [status]);
+
+    useEffect(() => {
+        function handleRoomSubtitlePointerDown(event: PointerEvent) {
+            if (
+                roomSubtitleFieldRef.current &&
+                !roomSubtitleFieldRef.current.contains(event.target as Node)
+            ) {
+                setIsRoomSubtitleMenuOpen(false);
+            }
+        }
+
+        if (!isRoomSubtitleMenuOpen) {
+            return;
+        }
+
+        window.addEventListener('pointerdown', handleRoomSubtitlePointerDown);
+        return () => {
+            window.removeEventListener('pointerdown', handleRoomSubtitlePointerDown);
+        };
+    }, [isRoomSubtitleMenuOpen]);
 
     useEffect(() => {
         if (
@@ -854,6 +971,30 @@ export default function App() {
         };
     }, [copyToast]);
 
+    async function handleWindowControl(
+        action: 'minimize' | 'toggleMaximize' | 'close'
+    ) {
+        if (!(window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__) {
+            return;
+        }
+
+        const { getCurrentWindow } = await import('@tauri-apps/api/window');
+        const appWindow = getCurrentWindow();
+
+        if (action === 'minimize') {
+            await appWindow.minimize();
+            return;
+        }
+
+        if (action === 'toggleMaximize') {
+            await appWindow.toggleMaximize();
+            setIsWindowMaximized(await appWindow.isMaximized());
+            return;
+        }
+
+        await appWindow.close();
+    }
+
     async function selectExistingMedia(mediaId: string) {
         if (!status) {
             return;
@@ -908,7 +1049,7 @@ export default function App() {
         try {
             const payload = await fetchMediaById(mediaId);
             setMonitoringMedia(payload);
-            setMessage('Monitoring target updated.');
+            setMessage('Monitoring Target updated.');
         } catch (reason) {
             setError(
                 reason instanceof Error
@@ -1289,8 +1430,8 @@ export default function App() {
             >
                 <div className="sectionHeader">
                     <div>
-                        <p className="sectionEyebrow">Media library</p>
-                        <h2>Reuse previous uploads</h2>
+                        <p className="sectionEyebrow">Media Library</p>
+                        <h2>Previous Uploads</h2>
                     </div>
                     <button
                         className="ghostButton"
@@ -1303,8 +1444,8 @@ export default function App() {
 
                 <p className="sectionCopy">
                     {isOperations
-                        ? 'Use an existing upload as the workflow input, then continue through subtitles, room controls, and share output.'
-                        : 'Choose a video as the monitoring target. This library is scoped to diagnostics and status inspection in the monitoring view.'}
+                        ? 'Browse media that is already on this host and continue the room setup flow from here.'
+                        : 'Browse media on this host and choose a file to inspect in the monitoring view.'}
                 </p>
 
                 {recentMedia.kind === 'loading' && (
@@ -1394,8 +1535,8 @@ export default function App() {
             <section className="surfacePanel opsImport">
                 <div className="sectionHeader">
                     <div>
-                        <p className="sectionEyebrow">Import movie</p>
-                        <h2>Upload new media from this machine</h2>
+                        <p className="sectionEyebrow">Import Movie</p>
+                        <h2>Upload New Media From This Machine</h2>
                     </div>
                 </div>
                 <p className="sectionCopy">
@@ -1472,7 +1613,7 @@ export default function App() {
                 <div className="sectionHeader">
                     <div>
                         <p className="sectionEyebrow">Subtitles</p>
-                        <h2>Attach and choose tracks</h2>
+                        <h2>Attach And Choose Tracks</h2>
                     </div>
                 </div>
                 <p className="sectionCopy">
@@ -1581,8 +1722,8 @@ export default function App() {
             <section className="surfacePanel accentPanel opsControls">
                 <div className="sectionHeader">
                     <div>
-                        <p className="sectionEyebrow">Room controls</p>
-                        <h2>Create and manage the watch room</h2>
+                        <p className="sectionEyebrow">Room Controls</p>
+                        <h2>Create And Manage The Watch Room</h2>
                     </div>
                     {room && (
                         <span className={`pill ${hasActiveRoom ? 'activePill' : 'mutedPill'}`}>
@@ -1600,15 +1741,15 @@ export default function App() {
 
                         <div className="metricsGrid denseMetricsGrid">
                             <div className="metricCard">
-                                <span className="metricLabel">Selected movie</span>
+                                <span className="metricLabel">Selected Movie</span>
                                 <strong>{media.originalFileName}</strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Processing state</span>
+                                <span className="metricLabel">Processing State</span>
                                 <strong>{operationStatusText}</strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Queue signal</span>
+                                <span className="metricLabel">Queue Signal</span>
                                 <strong>
                                     {processingQueued
                                         ? 'Queued now'
@@ -1623,7 +1764,7 @@ export default function App() {
                                 <strong>{formatDuration(media.durationMs)}</strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Subtitle plan</span>
+                                <span className="metricLabel">Subtitle Plan</span>
                                 <strong>{selectedSubtitle?.label ?? 'No subtitle'}</strong>
                             </div>
                         </div>
@@ -1642,26 +1783,62 @@ export default function App() {
                                 />
                             </label>
 
-                            <label className="field fieldSpan">
+                            <div className="field fieldSpan roomSubtitleField" ref={roomSubtitleFieldRef}>
                                 <span className="fieldLabel">Subtitle for the room</span>
-                                <select
-                                    className="selectInput"
-                                    onChange={(event) => {
-                                        const nextValue = event.target.value;
-                                        setSelectedRoomSubtitleId(
-                                            nextValue === '__off__' ? null : nextValue
-                                        );
+                                <button
+                                    aria-expanded={isRoomSubtitleMenuOpen}
+                                    className={`selectInput roomSubtitleTrigger ${isRoomSubtitleMenuOpen ? 'isOpen' : ''}`}
+                                    onClick={() =>
+                                        setIsRoomSubtitleMenuOpen((current) => !current)
+                                    }
+                                    onKeyDown={(event) => {
+                                        if (event.key === 'Escape') {
+                                            setIsRoomSubtitleMenuOpen(false);
+                                        }
                                     }}
-                                    value={selectedRoomSubtitleId ?? '__off__'}
+                                    type="button"
                                 >
-                                    <option value="__off__">No subtitle</option>
-                                    {subtitles.map((subtitle) => (
-                                        <option key={subtitle.id} value={subtitle.id}>
-                                            {subtitle.label} ({subtitle.format})
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                                    <span>{selectedRoomSubtitleOption?.label ?? 'No subtitle'}</span>
+                                    <span
+                                        aria-hidden="true"
+                                        className={`roomSubtitleChevron ${isRoomSubtitleMenuOpen ? 'isOpen' : ''}`}
+                                    />
+                                </button>
+                                {isRoomSubtitleMenuOpen && (
+                                    <div className="roomSubtitleMenu" role="listbox">
+                                        {roomSubtitleOptions.map((option) => {
+                                            const isSelected =
+                                                option.value ===
+                                                (selectedRoomSubtitleId ?? '__off__');
+
+                                            return (
+                                                <button
+                                                    aria-selected={isSelected}
+                                                    className={`roomSubtitleOption ${isSelected ? 'isSelected' : ''}`}
+                                                    key={option.value}
+                                                    onClick={() => {
+                                                        setSelectedRoomSubtitleId(
+                                                            option.value === '__off__'
+                                                                ? null
+                                                                : option.value
+                                                        );
+                                                        setIsRoomSubtitleMenuOpen(false);
+                                                    }}
+                                                    role="option"
+                                                    type="button"
+                                                >
+                                                    <span>{option.label}</span>
+                                                    {isSelected && (
+                                                        <span aria-hidden="true" className="roomSubtitleCheck">
+                                                            Active
+                                                        </span>
+                                                    )}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="actionsRow">
@@ -1737,7 +1914,7 @@ export default function App() {
                     </>
                 ) : (
                     <div className="emptyState">
-                        Select a movie first. Room controls stay dormant until the
+                        Select a movie first. Room Controls stay dormant until the
                         operational workflow has an active media selection.
                     </div>
                 )}
@@ -1751,7 +1928,7 @@ export default function App() {
                 <div className="sectionHeader">
                     <div>
                         <p className="sectionEyebrow">Share</p>
-                        <h2>Copy room URLs</h2>
+                        <h2>Copy Room URLs</h2>
                     </div>
                 </div>
                 <p className="sectionCopy">
@@ -1790,7 +1967,7 @@ export default function App() {
             <section className="surfacePanel monitorCurrentMovie">
                 <div className="sectionHeader">
                     <div>
-                        <p className="sectionEyebrow">Current movie</p>
+                        <p className="sectionEyebrow">Current Movie</p>
                         <h2>
                             {monitoringTarget?.originalFileName ??
                                 'No monitoring target selected'}
@@ -1885,8 +2062,8 @@ export default function App() {
             <section className="surfacePanel monitorOverview">
                 <div className="sectionHeader">
                     <div>
-                        <p className="sectionEyebrow">Room overview</p>
-                        <h2>{room ? 'Current room state' : 'No room yet'}</h2>
+                        <p className="sectionEyebrow">Room Overview</p>
+                        <h2>{room ? 'Current Room State' : 'No Room Yet'}</h2>
                     </div>
                 </div>
 
@@ -1941,8 +2118,8 @@ export default function App() {
             <section className="surfacePanel monitorHostSummary">
                 <div className="sectionHeader">
                     <div>
-                        <p className="sectionEyebrow">Host summary</p>
-                        <h2>Current session selection</h2>
+                        <p className="sectionEyebrow">Host Summary</p>
+                        <h2>Current Session Selection</h2>
                     </div>
                 </div>
 
@@ -1964,11 +2141,11 @@ export default function App() {
 
                 <div className="metricsGrid denseMetricsGrid">
                     <div className="metricCard">
-                        <span className="metricLabel">Connected participants</span>
+                        <span className="metricLabel">Connected Participants</span>
                         <strong>{connectedParticipantCount}</strong>
                     </div>
                     <div className="metricCard">
-                        <span className="metricLabel">Selected subtitle</span>
+                        <span className="metricLabel">Selected Subtitle</span>
                         <strong>{activeRoomSubtitle?.label ?? 'None'}</strong>
                     </div>
                 </div>
@@ -1982,7 +2159,7 @@ export default function App() {
                 <div className="sectionHeader">
                     <div>
                         <p className="sectionEyebrow">Participants</p>
-                        <h2>Presence and connection state</h2>
+                        <h2>Presence And Connection State</h2>
                     </div>
                 </div>
 
@@ -2043,7 +2220,7 @@ export default function App() {
                 <div className="sectionHeader">
                     <div>
                         <p className="sectionEyebrow">Diagnostics</p>
-                        <h2>Server health and room lifecycle</h2>
+                        <h2>Server Health</h2>
                     </div>
                     <button
                         className="ghostButton"
@@ -2056,9 +2233,9 @@ export default function App() {
 
                 {health.kind === 'success' && systemStatus.kind === 'success' ? (
                     <>
-                        <div className="metricsGrid">
+                        <div className="metricsGrid diagnosticsMetricsGrid">
                             <div className="metricCard">
-                                <span className="metricLabel">Server health</span>
+                                <span className="metricLabel">Server Health</span>
                                 <strong>{health.data.status}</strong>
                             </div>
                             <div className="metricCard">
@@ -2066,73 +2243,32 @@ export default function App() {
                                 <strong>{health.data.uptimeSeconds}s</strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Active rooms</span>
+                                <span className="metricLabel">Active Rooms</span>
                                 <strong>
                                     {systemStatus.data.diagnostics.activeRooms}
                                 </strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Processing jobs</span>
+                                <span className="metricLabel">Processing Jobs</span>
                                 <strong>
                                     {systemStatus.data.diagnostics.activeProcessingJobs}
                                 </strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Connected clients</span>
+                                <span className="metricLabel">Connected Clients</span>
                                 <strong>
                                     {systemStatus.data.diagnostics.connectedParticipants}
                                 </strong>
                             </div>
                             <div className="metricCard">
-                                <span className="metricLabel">Ready media</span>
+                                <span className="metricLabel">Ready Media</span>
                                 <strong>{systemStatus.data.diagnostics.readyMedia}</strong>
                             </div>
                         </div>
 
                         <div className="infoCard compactInfoCard">
-                            <p className="infoTitle">Room lifecycle</p>
-                            <p className="infoMeta">
-                                Active room policy: only one room can stay active at a time.
-                            </p>
-                            <p className="infoMeta">
-                                Replacement policy: creating a new room closes the previous
-                                one.
-                            </p>
-                            <p className="infoMeta">
-                                Shutdown policy: room state is cleared when the server stops.
-                            </p>
-                            <p className="infoMeta">
-                                HLS retention {systemStatus.data.cleanup.hlsRetentionHours}{' '}
-                                hours
-                            </p>
-                            <p className="infoMeta">
-                                Last cleanup{' '}
-                                {systemStatus.data.cleanup.lastRun
-                                    ? formatDateTime(
-                                        systemStatus.data.cleanup.lastRun.finishedAt
-                                    )
-                                    : 'No cleanup pass recorded yet'}
-                            </p>
-                        </div>
-
-                        <div className="infoCard compactInfoCard">
-                            <p className="infoTitle">Storage and runtime</p>
-                            <p className="infoMeta">
-                                Database {systemStatus.data.database.path}
-                            </p>
-                            <p className="infoMeta">
-                                Media dir {systemStatus.data.storage.mediaDir}
-                            </p>
-                            <p className="infoMeta">
-                                HLS dir {systemStatus.data.storage.hlsDir}
-                            </p>
-                            <p className="infoMeta">
-                                Subtitle dir {systemStatus.data.storage.subtitleDir}
-                            </p>
-                            <p className="infoMeta">
-                                Realtime {systemStatus.data.realtime.status} on{' '}
-                                {systemStatus.data.realtime.path}
-                            </p>
+                            <p className="infoTitle">Storage folder</p>
+                            <p className="infoMeta fontMono">{storageFolderPath}</p>
                             {status && showDebugUrls && (
                                 <>
                                     <p className="infoMeta">API {status.apiBaseUrl}</p>
@@ -2169,15 +2305,71 @@ export default function App() {
             : 'Monitoring View';
     const viewDescription =
         activeView === 'operations'
-            ? 'Action-driven layout from media input to room output. Cards are sequenced as a workflow: library, import, subtitles, room controls, then share.'
-            : 'Observability-driven telemetry dashboard. Cards are sequenced for diagnosis: target selection, media telemetry, room state, host mapping, participants, and diagnostics.';
+            ? 'Work through the hosting flow step by step: pick media, prepare subtitles, create a room, and share access with viewers.'
+            : 'Check the current host session, room state, participants, and media diagnostics without changing the active workflow.';
 
     return (
-        <main className="shell">
+        <main className={`shell ${isWindowMaximized ? 'shellMaximized' : ''}`}>
+            <header
+                className={`windowChrome ${isWindowFocused ? 'isFocused' : 'isBlurred'}`}
+            >
+                <div
+                    className="windowChromeBrand"
+                    data-tauri-drag-region
+                    onDoubleClick={() => void handleWindowControl('toggleMaximize')}
+                >
+                    <span className="windowChromeMark" aria-hidden="true" />
+                    <div className="windowChromeCopy" data-tauri-drag-region>
+                        <strong>VideoTogether</strong>
+                        <p className="windowChromeEyebrow">Desktop host console</p>
+                    </div>
+                </div>
+
+
+                <div className="windowControls" aria-label="Window controls">
+                    <button
+                        aria-label="Minimize window"
+                        className="windowControlButton"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            void handleWindowControl('minimize');
+                        }}
+                        type="button"
+                    >
+                        <span className="windowControlIcon minimize" aria-hidden="true" />
+                    </button>
+                    <button
+                        aria-label={isWindowMaximized ? 'Restore window' : 'Maximize window'}
+                        className="windowControlButton"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            void handleWindowControl('toggleMaximize');
+                        }}
+                        type="button"
+                    >
+                        <span
+                            className={`windowControlIcon ${isWindowMaximized ? 'restore' : 'maximize'}`}
+                            aria-hidden="true"
+                        />
+                    </button>
+                    <button
+                        aria-label="Close window"
+                        className="windowControlButton closeButton"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            void handleWindowControl('close');
+                        }}
+                        type="button"
+                    >
+                        <span className="windowControlIcon close" aria-hidden="true" />
+                    </button>
+                </div>
+            </header>
+
             <section className="panel dashboardShell">
                 <header className="appBar">
                     <div className="appBarBrand">
-                        <p className="eyebrow">VideoTogether host dashboard</p>
+
                         <h1>Dual-view host console</h1>
                         <p className="copy">
                             Switch between action flow and telemetry flow without mixing the
@@ -2221,8 +2413,8 @@ export default function App() {
                         <p className="sectionEyebrow">{viewTitle}</p>
                         <h2>
                             {viewTitle === 'Operational View'
-                                ? 'Action-driven workflow topology'
-                                : 'Observability-driven telemetry topology'}
+                                ? 'Run The Hosting Workflow'
+                                : 'Monitor Session And System Status'}
                         </h2>
                         <p className="sectionCopy">{viewDescription}</p>
                     </div>
@@ -2234,17 +2426,17 @@ export default function App() {
                                 <strong>{status.tauri}</strong>
                             </div>
                             <div className="statusCard">
-                                <span className="statusLabel">Operational movie</span>
+                                <span className="statusLabel">Operational Movie</span>
                                 <strong>{media?.originalFileName ?? 'None selected'}</strong>
                             </div>
                             <div className="statusCard">
-                                <span className="statusLabel">Monitoring target</span>
+                                <span className="statusLabel">Monitoring Target</span>
                                 <strong>
                                     {monitoringTarget?.originalFileName ?? 'None selected'}
                                 </strong>
                             </div>
                             <div className="statusCard">
-                                <span className="statusLabel">Connected viewers</span>
+                                <span className="statusLabel">Connected Viewers</span>
                                 <strong>{connectedParticipantCount}</strong>
                             </div>
                         </div>
@@ -2260,10 +2452,18 @@ export default function App() {
                             {renderMediaLibrary('operations')}
                             {renderImportMovieSection()}
                             {renderSubtitlesSection()}
+                            <div
+                                aria-hidden="true"
+                                className="surfacePanel workspaceSpacer"
+                            />
                         </div>
                         <div className="workspaceColumn">
                             {renderRoomControlsSection()}
                             {renderShareSection()}
+                            <div
+                                aria-hidden="true"
+                                className="surfacePanel workspaceSpacer"
+                            />
                         </div>
                     </section>
                 ) : (
@@ -2272,13 +2472,25 @@ export default function App() {
                             {renderMediaLibrary('monitoring')}
                             {renderHostSummarySection()}
                             {renderParticipantsSection()}
+                            <div
+                                aria-hidden="true"
+                                className="surfacePanel workspaceSpacer"
+                            />
                         </div>
                         <div className="workspaceColumn">
                             {renderCurrentMovieSection()}
+                            <div
+                                aria-hidden="true"
+                                className="surfacePanel workspaceSpacer"
+                            />
                         </div>
                         <div className="workspaceColumn">
                             {renderRoomOverviewSection()}
                             {renderDiagnosticsSection()}
+                            <div
+                                aria-hidden="true"
+                                className="surfacePanel workspaceSpacer"
+                            />
                         </div>
                     </section>
                 )}
@@ -2292,4 +2504,5 @@ export default function App() {
         </main>
     );
 }
+
 

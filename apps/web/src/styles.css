@@ -22,12 +22,39 @@ limitations under the License.
 
 :root {
   font-family: 'Inter', sans-serif;
-  color: #1f2937;
-  background: #fffaf2;
+  color: #47334f;
+  background:
+    radial-gradient(circle at 14% 14%, rgba(232, 166, 72, 0.24), transparent 24%),
+    radial-gradient(circle at 50% 36%, rgba(98, 204, 108, 0.32), transparent 30%),
+    radial-gradient(circle at 56% 86%, rgba(165, 142, 224, 0.24), transparent 28%),
+    linear-gradient(180deg, #ede7dd 0%, #e8e2e0 28%, #e1dce4 62%, #ddd4d1 100%);
+  --bg-panel: rgba(235, 229, 228, 0.78);
+  --bg-card: rgba(233, 228, 228, 0.76);
+  --bg-card-soft: rgba(238, 233, 231, 0.86);
+  --line-soft: rgba(129, 104, 140, 0.18);
+  --line-strong: rgba(129, 104, 140, 0.3);
+  --text-main: #47334f;
+  --text-soft: rgba(89, 67, 98, 0.86);
+  --text-muted: rgba(125, 102, 133, 0.76);
+  --accent-green: #62cc6c;
+  --accent-orange: #e8a648;
+  --accent-orange-strong: #de8552;
+  --accent-purple-deep: #a58ee0;
+  --accent-red: #ea8ca2;
+  --shadow-panel: 0 18px 42px rgba(151, 123, 125, 0.16);
+}
+
+html {
+  min-height: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100vh;
+  overflow-x: hidden;
+  color: var(--text-main);
+  background: inherit;
 }
 
 h1,
@@ -36,6 +63,134 @@ h3 {
   font-family: 'Fraunces', serif;
 }
 
+body,
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+video {
+  display: block;
+}
+
 * {
   box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(165, 142, 224, 0.28);
+  color: #372635;
+}
+
+.shadow-panel {
+  box-shadow: var(--shadow-panel) !important;
+}
+
+.text-ink,
+.text-slate-950,
+.text-slate-900 {
+  color: var(--text-main) !important;
+}
+
+.text-slate-700,
+.text-slate-600 {
+  color: var(--text-soft) !important;
+}
+
+.text-slate-500 {
+  color: var(--text-muted) !important;
+}
+
+.text-coral {
+  color: #89718f !important;
+}
+
+.text-red-700 {
+  color: #8f4056 !important;
+}
+
+.text-white {
+  color: #fff8f4 !important;
+}
+
+.bg-white\/85,
+.bg-white {
+  background:
+    radial-gradient(circle at top left, rgba(232, 166, 72, 0.14), transparent 28%),
+    radial-gradient(circle at 50% 28%, rgba(98, 204, 108, 0.19), transparent 30%),
+    radial-gradient(circle at 50% 100%, rgba(165, 142, 224, 0.14), transparent 30%),
+    linear-gradient(180deg, rgba(239, 232, 228, 0.86), rgba(232, 226, 228, 0.82)),
+    var(--bg-panel) !important;
+}
+
+.bg-slate-50,
+.bg-slate-100 {
+  background:
+    radial-gradient(circle at top left, rgba(232, 166, 72, 0.13), transparent 24%),
+    radial-gradient(circle at 50% 26%, rgba(98, 204, 108, 0.18), transparent 26%),
+    radial-gradient(circle at 50% 100%, rgba(165, 142, 224, 0.13), transparent 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.1)),
+    var(--bg-card) !important;
+}
+
+.bg-slate-900 {
+  background:
+    radial-gradient(circle at top left, rgba(232, 166, 72, 0.17), transparent 30%),
+    radial-gradient(circle at 52% 24%, rgba(98, 204, 108, 0.24), transparent 32%),
+    radial-gradient(circle at 50% 100%, rgba(165, 142, 224, 0.17), transparent 30%),
+    linear-gradient(180deg, rgba(82, 64, 82, 0.97), rgba(58, 44, 66, 0.98)) !important;
+}
+
+.bg-red-50 {
+  background: rgba(234, 140, 162, 0.16) !important;
+}
+
+.bg-red-600 {
+  background:
+    linear-gradient(135deg, rgba(232, 166, 72, 0.86), rgba(98, 204, 108, 0.94), rgba(165, 142, 224, 0.86)) !important;
+}
+
+.border-white\/70,
+.border-slate-200 {
+  border-color: var(--line-soft) !important;
+}
+
+.border-slate-300 {
+  border-color: var(--line-strong) !important;
+}
+
+.border-red-200 {
+  border-color: rgba(234, 140, 162, 0.32) !important;
+}
+
+.bg-white\/85,
+.bg-white,
+.bg-slate-50,
+.bg-slate-100,
+.border-white\/70,
+.border-slate-200,
+.border-slate-300 {
+  backdrop-filter: blur(18px);
+}
+
+.hover\:border-slate-900:hover {
+  border-color: rgba(98, 204, 108, 0.74) !important;
+  box-shadow:
+    0 0 0 1px rgba(98, 204, 108, 0.18),
+    0 16px 30px rgba(151, 123, 125, 0.14);
+}
+
+.hover\:bg-white:hover {
+  background:
+    radial-gradient(circle at top left, rgba(232, 166, 72, 0.15), transparent 24%),
+    radial-gradient(circle at 50% 24%, rgba(98, 204, 108, 0.2), transparent 26%),
+    radial-gradient(circle at 50% 100%, rgba(165, 142, 224, 0.15), transparent 26%),
+    linear-gradient(180deg, rgba(241, 235, 231, 0.94), rgba(235, 229, 231, 0.92)),
+    var(--bg-card-soft) !important;
+}
+
+.disabled\:bg-slate-400:disabled {
+  background: linear-gradient(135deg, rgba(232, 166, 72, 0.38), rgba(98, 204, 108, 0.48), rgba(165, 142, 224, 0.38)) !important;
 }

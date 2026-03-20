@@ -21,13 +21,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: '#1f2937',
-        paper: '#fffaf2',
-        coral: '#ff7a59',
-        gold: '#f4b942'
+        ink: '#47334f',
+        paper: '#f4ebbf',
+        coral: '#ef9762',
+        gold: '#f6bc61',
+        meadow: '#7fd47f',
+        lilac: '#a78ed8'
       },
       boxShadow: {
-        panel: '0 20px 60px rgba(31, 41, 55, 0.12)'
+        panel: '0 18px 42px rgba(151, 123, 125, 0.14)'
       }
     }
   },
