@@ -37,8 +37,13 @@ use std::{
 #[cfg(not(debug_assertions))]
 use std::os::windows::process::CommandExt;
 
+#[cfg(any(not(debug_assertions), target_os = "windows"))]
+use tauri::Manager;
 #[cfg(not(debug_assertions))]
-use tauri::{Manager, RunEvent, Runtime};
+use tauri::RunEvent;
+use tauri::Runtime;
+#[cfg(target_os = "windows")]
+use window_vibrancy::{apply_acrylic, apply_blur};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -839,18 +844,34 @@ fn get_local_status() -> DesktopStatus {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn setup_window_vibrancy<R: Runtime>(app: &tauri::App<R>) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    let _ = apply_acrylic(&window, Some((12, 12, 12, 36)))
+        .or_else(|_| apply_blur(&window, Some((12, 12, 12, 24))));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
-    let mut builder =
-        tauri::Builder::default().invoke_handler(tauri::generate_handler![get_local_status]);
+    let mut builder = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![get_local_status])
+        .setup(|app| {
+            #[cfg(target_os = "windows")]
+            setup_window_vibrancy(app);
+
+            #[cfg(not(debug_assertions))]
+            setup_release_server_sidecar(app)?;
+
+            Ok(())
+        });
 
     #[cfg(not(debug_assertions))]
     {
-        builder = builder.manage(ReleaseSidecarState::default()).setup(|app| {
-            setup_release_server_sidecar(app)?;
-            Ok(())
-        });
+        builder = builder.manage(ReleaseSidecarState::default());
     }
 
     let app = builder
@@ -869,3 +890,6 @@ pub fn run() {
         }
     });
 }
+
+
+

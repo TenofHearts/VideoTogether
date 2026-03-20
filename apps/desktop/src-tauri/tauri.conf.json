@@ -16,6 +16,7 @@
         "width": 1280,
         "height": 860,
         "resizable": true,
+        "transparent": true,
         "decorations": false,
         "maximized": true
       }
@@ -30,3 +31,4 @@
     "licenseFile": "build/EULA.txt"
   }
 }
+
