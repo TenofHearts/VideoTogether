@@ -23,10 +23,10 @@ export default {
       colors: {
         ink: '#47334f',
         paper: '#f4ebbf',
-        coral: '#ef9762',
-        gold: '#f6bc61',
-        meadow: '#7fd47f',
-        lilac: '#a78ed8'
+        coral: '#a63c12',
+        gold: '#925111',
+        meadow: '#67da86',
+        lilac: '#5616b5'
       },
       boxShadow: {
         panel: '0 18px 42px rgba(151, 123, 125, 0.14)'

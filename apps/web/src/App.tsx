@@ -299,6 +299,41 @@ function getParticipantBadge(participant: Participant): string {
   return `${roleLabel} ${stateLabel}`;
 }
 
+function getStatusBadgeClass(status: Media['status']): string {
+  switch (status) {
+    case 'ready':
+      return 'statusBadge statusBadgeReady';
+    case 'processing':
+    case 'pending':
+      return 'statusBadge statusBadgeProcessing';
+    case 'error':
+      return 'statusBadge statusBadgeError';
+    default:
+      return 'statusBadge statusBadgeMuted';
+  }
+}
+
+function getParticipantBadgeClass(participant: Participant): string {
+  return participant.connectionState === 'connected'
+    ? 'statusBadge statusBadgeReady'
+    : 'statusBadge statusBadgeMuted';
+}
+
+function getPlayerStateBadgeClass(state: PlayerRuntimeState): string {
+  switch (state) {
+    case 'ready':
+      return 'statusBadge statusBadgeReady';
+    case 'loading':
+    case 'buffering':
+    case 'seeking':
+      return 'statusBadge statusBadgeProcessing';
+    case 'error':
+      return 'statusBadge statusBadgeError';
+    default:
+      return 'statusBadge statusBadgeMuted';
+  }
+}
+
 function isSameMedia(left: Media, right: Media): boolean {
   return (
     left.id === right.id &&
@@ -1688,9 +1723,9 @@ export default function App() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#fff7d8,_#fffaf1_42%,_#d9f0ff)] px-4 py-6 text-ink sm:px-6 sm:py-10">
+    <main className="min-h-screen px-4 py-6 text-ink sm:px-6 sm:py-10">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:gap-8">
-        <section className="rounded-[1.75rem] border border-white/70 bg-white/85 p-5 shadow-panel backdrop-blur sm:rounded-[2rem] sm:p-8">
+        <section className="rounded-[1.75rem] border border-white/70 p-5 shadow-panel backdrop-blur sm:rounded-[2rem] sm:p-8">
           <h1 className="font-sans text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
             VideoTogether
           </h1>
@@ -1700,8 +1735,9 @@ export default function App() {
           </p>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] xl:items-stretch">
-          <section className="h-full rounded-[1.75rem] border border-white/70 bg-white/85 p-4 shadow-panel sm:rounded-[2rem] sm:p-6">
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)] xl:items-start">
+          <div className="flex flex-col gap-6">
+          <section className="rounded-[1.75rem] border border-white/70 p-4 shadow-panel sm:rounded-[2rem] sm:p-6">
             <div className="flex flex-col gap-5">
               <div>
                 <p className="text-sm uppercase tracking-[0.25em] text-coral">
@@ -1726,59 +1762,9 @@ export default function App() {
                     />
                   </div>
 
-                  <div className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-700">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                          Subtitles
-                        </p>
-                        <p className="mt-2 text-lg break-words font-semibold text-slate-900">
-                          Track selection
-                        </p>
-                      </div>
-                      {subtitleSaving && (
-                        <span className="self-start rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:self-auto">
-                          Saving...
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
-                      <select
-                        className="min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm"
-                        disabled={
-                          subtitleState.data.length === 0 || subtitleSaving
-                        }
-                        onChange={(event) =>
-                          void saveSubtitleSelection(
-                            event.target.value === '__off__'
-                              ? null
-                              : event.target.value
-                          )
-                        }
-                        value={selectedSubtitleId ?? '__off__'}
-                      >
-                        <option value="__off__">Subtitles off</option>
-                        {subtitleState.data.map((subtitle) => (
-                          <option key={subtitle.id} value={subtitle.id}>
-                            {subtitle.label} ({subtitle.format})
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-sm leading-6 text-slate-600 lg:max-w-[220px] lg:justify-self-end">
-                        {route.kind === 'room'
-                          ? 'Changes sync through the room state.'
-                          : 'Open a room to make subtitle selection shared.'}
-                      </p>
-                    </div>
-                    {subtitleState.kind === 'error' && (
-                      <p className="mt-3 rounded-xl bg-red-50 p-3 text-red-700">
-                        {subtitleState.message}
-                      </p>
-                    )}
-                  </div>
                 </>
               ) : (
-                <div className="rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 p-6 text-slate-600 sm:p-8">
+                <div className="rounded-[1.5rem] border border-dashed border-slate-300 p-6 text-slate-600 sm:p-8">
                   {route.kind === 'room' && roomState.kind === 'loading'
                     ? 'Validating room token and loading room metadata...'
                     : route.kind === 'room' && roomState.kind === 'error'
@@ -1799,215 +1785,207 @@ export default function App() {
                 </div>
               )}
 
-              {route.kind === 'room' && (
-                <section className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-700">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                        Room
-                      </p>
-                      <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                        Watch session
-                      </h2>
-                    </div>
-                    <button
-                      className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 sm:w-auto"
-                      onClick={() => navigateHome(null)}
-                      type="button"
-                    >
-                      Back to browser
-                    </button>
-                  </div>
-
-                  {roomState.kind === 'loading' && (
-                    <div className="mt-6 rounded-[1.5rem] bg-slate-900 p-6 text-white sm:p-8">
-                      Validating room token and loading room metadata...
-                    </div>
-                  )}
-
-                  {roomState.kind === 'error' && (
-                    <div className="mt-6 rounded-[1.5rem] border border-red-200 bg-red-50 p-5 text-red-700 sm:p-6">
-                      <p className="text-lg font-semibold">
-                        {roomState.statusCode === 410
-                          ? 'This room is no longer available.'
-                          : 'This room could not be opened.'}
-                      </p>
-                      <p className="mt-2">{roomState.message}</p>
-                      {roomState.statusCode !== 404 &&
-                        roomState.statusCode !== 410 && (
-                          <button
-                            className="mt-4 w-full rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white sm:w-auto"
-                            onClick={retryRoomLookup}
-                            type="button"
-                          >
-                            Retry room lookup
-                          </button>
-                        )}
-                    </div>
-                  )}
-
-                  {currentRoom &&
-                    joinState.kind !== 'success' &&
-                    roomState.kind === 'success' && (
-                      <div className="mt-6 flex flex-col gap-4">
-                        <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
-                          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                            Join room
-                          </p>
-                          <form
-                            className="mt-4 flex flex-col gap-3 md:flex-row"
-                            onSubmit={(event) => {
-                              event.preventDefault();
-                              void joinRoom(displayNameInput);
-                            }}
-                          >
-                            <input
-                              className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm"
-                              maxLength={48}
-                              onChange={(event) =>
-                                setDisplayNameInput(event.target.value)
-                              }
-                              value={displayNameInput}
-                            />
-                            <button
-                              className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-400 md:w-auto"
-                              disabled={joinState.kind === 'joining'}
-                              type="submit"
-                            >
-                              {joinState.kind === 'joining'
-                                ? 'Joining...'
-                                : 'Join room'}
-                            </button>
-                          </form>
-                          {joinState.kind === 'error' && (
-                            <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">
-                              {joinState.message}
-                            </p>
-                          )}
-                          {notice && (
-                            <p className="mt-3 rounded-xl bg-slate-100 p-3 text-sm text-slate-700">
-                              {notice}
-                            </p>
-                          )}
-                        </div>
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          <div className="min-w-0 rounded-[1.5rem] bg-slate-100 p-5 text-sm text-slate-700">
-                            <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                              Room info
-                            </p>
-                            <p className="mt-2 break-all font-mono text-[12px] text-slate-900 sm:text-[13px]">
-                              {currentRoom.shareUrl}
-                            </p>
-                            <p className="mt-2">
-                              Status: {currentRoom.room.status}
-                            </p>
-                            <p className="mt-1">
-                              Playback:{' '}
-                              {formatPlaybackStateLabel(
-                                currentRoom.room.playbackState
-                              )}
-                            </p>
-                            <p className="mt-1">
-                              Scope: current room only, until the host replaces
-                              it or stops the server.
-                            </p>
-                          </div>
-                          <div className="min-w-0 rounded-[1.5rem] border border-slate-200 bg-white p-5 text-sm text-slate-700">
-                            <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                              Media
-                            </p>
-                            <p className="mt-2 text-lg break-words font-semibold text-slate-900">
-                              {currentRoom.media?.originalFileName ??
-                                'Host is still preparing media'}
-                            </p>
-                            <p className="mt-2">
-                              Status:{' '}
-                              {currentRoom.media
-                                ? getStatusLabel(currentRoom.media.status)
-                                : 'Unavailable'}
-                            </p>
-                            <p className="mt-1">
-                              Subtitles: {currentRoom.subtitles.length}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                  {currentRoom && joinState.kind === 'success' && (
-                    <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
-                      <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                        Room info
-                      </p>
-                      <p className="mt-2 break-all font-mono text-[12px] text-slate-900 sm:text-[13px]">
-                        {currentRoom.shareUrl}
-                      </p>
-                      <p className="mt-2">Status: {currentRoom.room.status}</p>
-                      <p className="mt-1">
-                        Playback:{' '}
-                        {formatPlaybackStateLabel(
-                          currentRoom.room.playbackState
-                        )}
-                      </p>
-                      <p className="mt-1 break-words">
-                        Active media:{' '}
-                        {currentRoom.media?.originalFileName ??
-                          'Host is still preparing media'}
-                      </p>
-                      {notice && (
-                        <p className="mt-3 rounded-xl bg-white p-3 text-sm text-slate-700">
-                          {notice}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </section>
-              )}
             </div>
           </section>
+        {playbackMedia && canPlayMedia && (
+          <section className="rounded-[1.75rem] border border-white/70 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                  Subtitles
+                </p>
+                <p className="mt-2 text-lg break-words font-semibold text-slate-900">
+                  Track selection
+                </p>
+              </div>
+              {subtitleSaving && (
+                <span className="self-start shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium text-slate-600 sm:self-auto">
+                  Saving...
+                </span>
+              )}
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
+              <select
+                className="subtitleSelect min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                disabled={subtitleState.data.length === 0 || subtitleSaving}
+                onChange={(event) =>
+                  void saveSubtitleSelection(
+                    event.target.value === '__off__' ? null : event.target.value
+                  )
+                }
+                value={selectedSubtitleId ?? '__off__'}
+              >
+                <option value="__off__">Subtitles off</option>
+                {subtitleState.data.map((subtitle) => (
+                  <option key={subtitle.id} value={subtitle.id}>
+                    {subtitle.label} ({subtitle.format})
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm leading-6 text-slate-600 lg:max-w-[220px] lg:justify-self-end">
+                {route.kind === 'room'
+                  ? 'Changes sync through the room state.'
+                  : 'Open a room to make subtitle selection shared.'}
+              </p>
+            </div>
+            {subtitleState.kind === 'error' && (
+              <p className="mt-3 rounded-xl bg-red-50 p-3 text-red-700">
+                {subtitleState.message}
+              </p>
+            )}
+          </section>
+        )}
+        {currentRoom && (
+          <section className="rounded-[1.75rem] border border-white/70 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm uppercase tracking-[0.25em] text-coral">
+                  Room
+                </p>
+                <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
+                  Watch session
+                </h2>
+              </div>
+              {route.kind === 'room' && (
+                <button
+                  className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 sm:w-auto"
+                  onClick={() => navigateHome(null)}
+                  type="button"
+                >
+                  Back to browser
+                </button>
+              )}
+            </div>
 
-          <div className="flex h-full flex-col gap-6">
-            {route.kind === 'home' && (
-              <section className="rounded-[1.75rem] border border-slate-200 bg-white/85 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                      Library
-                    </p>
-                    <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                      Browser queue
-                    </h2>
-                  </div>
-                  {playbackMedia ? (
-                    <button
-                      className="w-full rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 sm:w-auto"
-                      onClick={() => navigateHome(null)}
-                      type="button"
-                    >
-                      Clear selection
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="mt-6 rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 text-sm text-slate-700">
-                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                    Browser playback
-                  </p>
-                  <p className="mt-2 leading-7">
-                    {selectedMedia.kind === 'loading'
-                      ? 'Loading media metadata...'
-                      : selectedMedia.kind === 'error'
-                        ? selectedMedia.message
-                        : playbackMedia
-                          ? 'Selected media is ready. Playback controls stay on the left, while metadata and player state live below.'
-                          : 'Pick a recent import below to load the browser player.'}
-                  </p>
-                </div>
-              </section>
+            {roomState.kind === 'loading' && (
+              <div className="mt-6 rounded-[1.5rem] bg-slate-900 p-6 text-white sm:p-8">
+                Validating room token and loading room metadata...
+              </div>
             )}
 
+            {roomState.kind === 'error' && (
+              <div className="mt-6 rounded-[1.5rem] border border-red-200 bg-red-50 p-5 text-red-700 sm:p-6">
+                <p className="text-lg font-semibold">
+                  {roomState.statusCode === 410
+                    ? 'This room is no longer available.'
+                    : 'This room could not be opened.'}
+                </p>
+                <p className="mt-2">{roomState.message}</p>
+                {roomState.statusCode !== 404 && roomState.statusCode !== 410 && (
+                  <button
+                    className="mt-4 w-full rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white sm:w-auto"
+                    onClick={retryRoomLookup}
+                    type="button"
+                  >
+                    Retry room lookup
+                  </button>
+                )}
+              </div>
+            )}
+
+            {currentRoom && joinState.kind !== 'success' && roomState.kind === 'success' && (
+              <div className="mt-6 flex flex-col gap-4">
+                <div className="rounded-[1.5rem] border border-slate-200 p-5">
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                    Join room
+                  </p>
+                  <form
+                    className="mt-4 flex flex-col gap-3 md:flex-row"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void joinRoom(displayNameInput);
+                    }}
+                  >
+                    <input
+                      className="flex-1 rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                      maxLength={48}
+                      onChange={(event) => setDisplayNameInput(event.target.value)}
+                      value={displayNameInput}
+                    />
+                    <button
+                      className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white disabled:bg-slate-400 md:w-auto"
+                      disabled={joinState.kind === 'joining'}
+                      type="submit"
+                    >
+                      {joinState.kind === 'joining' ? 'Joining...' : 'Join room'}
+                    </button>
+                  </form>
+                  {joinState.kind === 'error' && (
+                    <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                      {joinState.message}
+                    </p>
+                  )}
+                  {notice && (
+                    <p className="noticeCard mt-3 rounded-xl p-3 text-sm text-slate-700">
+                      {notice}
+                    </p>
+                  )}
+                </div>
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="innerPanel min-w-0 rounded-[1.5rem] p-5 text-sm text-slate-700">
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                      Room info
+                    </p>
+                    <p className="mt-2 break-all font-mono text-[12px] text-slate-900 sm:text-[13px]">
+                      {currentRoom.shareUrl}
+                    </p>
+                    <p className="mt-2">Status: {currentRoom.room.status}</p>
+                    <p className="mt-1">
+                      Playback:{' '}
+                      {formatPlaybackStateLabel(currentRoom.room.playbackState)}
+                    </p>
+                    <p className="mt-1">
+                      Scope: current room only, until the host replaces it or stops the server.
+                    </p>
+                  </div>
+                  <div className="innerPanel min-w-0 rounded-[1.5rem] p-5 text-sm text-slate-700">
+                    <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                      Media
+                    </p>
+                    <p className="mt-2 text-lg break-words font-semibold text-slate-900">
+                      {currentRoom.media?.originalFileName ?? 'Host is still preparing media'}
+                    </p>
+                    <p className="mt-2">
+                      Status:{' '}
+                      {currentRoom.media ? getStatusLabel(currentRoom.media.status) : 'Unavailable'}
+                    </p>
+                    <p className="mt-1">Subtitles: {currentRoom.subtitles.length}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {currentRoom && joinState.kind === 'success' && (
+              <div className="innerPanel mt-6 rounded-[1.5rem] border border-slate-200 p-5 text-sm text-slate-700">
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
+                  Room info
+                </p>
+                <p className="mt-2 break-all font-mono text-[12px] text-slate-900 sm:text-[13px]">
+                  {currentRoom.shareUrl}
+                </p>
+                <p className="mt-2">Status: {currentRoom.room.status}</p>
+                <p className="mt-1">
+                  Playback:{' '}
+                  {formatPlaybackStateLabel(currentRoom.room.playbackState)}
+                </p>
+                <p className="mt-1 break-words">
+                  Active media: {currentRoom.media?.originalFileName ?? 'Host is still preparing media'}
+                </p>
+                {notice && (
+                  <p className="noticeCard mt-3 rounded-xl p-3 text-sm text-slate-700">
+                    {notice}
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+        )}
+        </div>
+
+          <div className="flex flex-col gap-6">
+
             {currentRoom && (
-              <section className="rounded-[1.75rem] border border-slate-200 bg-white/85 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
+              <section className="rounded-[1.75rem] border border-slate-200 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
                 <p className="text-sm uppercase tracking-[0.25em] text-coral">
                   Participants
                 </p>
@@ -2017,7 +1995,7 @@ export default function App() {
                 <div className="mt-4 flex flex-col gap-3">
                   {currentRoom.participants.map((participant) => (
                     <div
-                      className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4"
+                      className="innerPanel rounded-[1.5rem] border border-slate-200 p-4"
                       key={participant.id}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2029,7 +2007,7 @@ export default function App() {
                             Last seen {formatTimestamp(participant.lastSeenAt)}
                           </p>
                         </div>
-                        <span className="self-start rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 sm:self-auto">
+                        <span className={`self-start shrink-0 whitespace-nowrap sm:self-auto ${getParticipantBadgeClass(participant)}`}>
                           {getParticipantBadge(participant)}
                         </span>
                       </div>
@@ -2041,14 +2019,14 @@ export default function App() {
 
             {playbackMedia && canPlayMedia && (
               <>
-                <section className="rounded-[1.75rem] border border-slate-200 bg-white/85 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
+                <section className="rounded-[1.75rem] border border-slate-200 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
                   <p className="text-sm uppercase tracking-[0.25em] text-coral">
                     Media
                   </p>
                   <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
                     File details
                   </h2>
-                  <div className="mt-4 min-w-0 rounded-[1.5rem] bg-slate-100 p-5 text-sm text-slate-700">
+                  <div className="innerPanel mt-4 min-w-0 rounded-[1.5rem] p-5 text-sm text-slate-700">
                     <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
                       Media
                     </p>
@@ -2072,7 +2050,7 @@ export default function App() {
                   </div>
                 </section>
 
-                <section className="rounded-[1.75rem] border border-slate-200 bg-white/85 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
+                <section className="rounded-[1.75rem] border border-slate-200 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <p className="text-sm uppercase tracking-[0.25em] text-coral">
@@ -2082,12 +2060,12 @@ export default function App() {
                         Stream state
                       </h2>
                     </div>
-                    <span className="self-start rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 sm:self-auto">
+                    <span className={`self-start shrink-0 whitespace-nowrap sm:self-auto ${getPlayerStateBadgeClass(playerState)}`}>
                       {formatPlayerStateLabel(playerState)}
                     </span>
                   </div>
                   <div className="mt-4 grid gap-3">
-                    <div className="min-w-0 rounded-2xl bg-slate-100 p-3">
+                    <div className="innerPanelCompact min-w-0 rounded-2xl p-3">
                       <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
                         Stream
                       </p>
@@ -2095,7 +2073,7 @@ export default function App() {
                         {playerMessage ?? 'Waiting for player setup.'}
                       </p>
                     </div>
-                    <div className="min-w-0 rounded-2xl bg-slate-100 p-3">
+                    <div className="innerPanelCompact min-w-0 rounded-2xl p-3">
                       <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
                         Sync
                       </p>
@@ -2106,7 +2084,7 @@ export default function App() {
                           : 'Shared playback activates after joining a room.'}
                       </p>
                     </div>
-                    <div className="min-w-0 rounded-2xl bg-slate-100 p-3">
+                    <div className="innerPanelCompact min-w-0 rounded-2xl p-3">
                       <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
                         Subtitles
                       </p>
@@ -2129,62 +2107,10 @@ export default function App() {
                 </section>
               </>
             )}
-
-            {route.kind === 'home' && (
-              <section className="rounded-[1.75rem] border border-slate-200 bg-white/85 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
-                <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                  Recent imports
-                </p>
-                <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                  Media queue
-                </h2>
-                {recentMedia.kind === 'loading' && (
-                  <div className="mt-4 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">
-                    Loading media queue...
-                  </div>
-                )}
-                {recentMedia.kind === 'error' && (
-                  <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                    {recentMedia.message}
-                  </div>
-                )}
-                {recentMedia.kind === 'success' &&
-                  recentMedia.data.length === 0 && (
-                    <div className="mt-4 rounded-2xl bg-slate-100 p-4 text-sm text-slate-600">
-                      No media has been imported yet.
-                    </div>
-                  )}
-                {recentMedia.kind === 'success' &&
-                  recentMedia.data.length > 0 && (
-                    <div className="mt-4 flex flex-col gap-3">
-                      {recentMedia.data.map((media) => (
-                        <button
-                          className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-slate-900 hover:bg-white"
-                          key={media.id}
-                          onClick={() => navigateHome(media.id)}
-                          type="button"
-                        >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div>
-                              <p className="break-words font-semibold text-slate-900">
-                                {media.originalFileName}
-                              </p>
-                              <p className="mt-1 text-sm text-slate-600">
-                                Imported {formatTimestamp(media.createdAt)}
-                              </p>
-                            </div>
-                            <span className="self-start rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 sm:self-auto">
-                              {getStatusLabel(media.status)}
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-              </section>
-            )}
           </div>
         </section>
+
+
       </div>
     </main>
   );
