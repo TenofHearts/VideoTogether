@@ -1296,6 +1296,206 @@ select.selectInput {
     }
 }
 
+/* desktop-ui-reapply */
+:root {
+    background:
+        radial-gradient(circle at 14% 14%, rgba(228, 127, 18, 0.34), transparent 44%),
+        radial-gradient(circle at 50% 50%, rgba(91, 220, 128, 0.26), transparent 38%),
+        radial-gradient(circle at 88% 12%, rgba(91, 220, 128, 0.2), transparent 30%),
+        radial-gradient(circle at 12% 88%, rgba(91, 220, 128, 0.2), transparent 30%),
+        radial-gradient(circle at 86% 86%, rgba(105, 54, 212, 0.34), transparent 44%),
+        linear-gradient(135deg, #f3ede4 0%, #e8efe6 48%, #e4e8f1 100%);
+    --bg-panel: rgba(255, 255, 255, 0.035);
+    --bg-card: rgba(255, 255, 255, 0.02);
+    --line-soft: rgba(129, 104, 140, 0.24);
+    --line-strong: rgba(129, 104, 140, 0.38);
+    --button-glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(245, 235, 228, 0.88));
+}
 
+.windowChrome {
+    border-bottom: 1px solid rgba(129, 104, 140, 0.28);
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(24px) saturate(118%);
+    box-shadow:
+        inset 0 -1px 0 rgba(255, 255, 255, 0.32),
+        0 1px 0 rgba(255, 255, 255, 0.18);
+}
 
+.windowChromeEyebrow,
+.windowChromeMeta,
+.windowChromePill,
+.workspaceSpacer {
+    display: none !important;
+}
 
+.windowControlButton,
+.ghostButton {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(245, 235, 228, 0.86));
+}
+
+.panel {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025)),
+        var(--bg-panel);
+    backdrop-filter: blur(20px) saturate(125%);
+}
+
+.appBar {
+    border: 1px solid rgba(129, 104, 140, 0.16);
+    background:
+        radial-gradient(circle at top right, rgba(206, 131, 48, 0.12), transparent 24%),
+        radial-gradient(circle at left center, rgba(77, 213, 120, 0.18), transparent 34%),
+        radial-gradient(circle at 88% 14%, rgba(105, 54, 212, 0.08), transparent 20%),
+        linear-gradient(180deg, rgba(247, 239, 232, 0.94), rgba(241, 232, 226, 0.96));
+    backdrop-filter: blur(12px) saturate(120%);
+}
+
+.viewToggle {
+    border: 1px solid rgba(129, 104, 140, 0.16);
+    background:
+        linear-gradient(180deg, rgba(250, 242, 235, 0.92), rgba(244, 232, 225, 0.92));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.44),
+        0 12px 24px rgba(151, 123, 125, 0.08);
+}
+
+.toggleButton:hover {
+    background: rgba(255, 255, 255, 0.44);
+}
+
+.toggleButton.active {
+    color: #2d2431;
+    border-color: rgba(173, 144, 122, 0.3);
+    background: linear-gradient(135deg, rgba(170, 216, 176, 0.9), rgba(231, 215, 177, 0.92), rgba(229, 190, 154, 0.9));
+    box-shadow: 0 10px 20px rgba(151, 123, 125, 0.12);
+}
+
+.surfacePanel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.016), rgba(255, 255, 255, 0.004));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.08),
+        0 8px 20px rgba(151, 123, 125, 0.03);
+    backdrop-filter: blur(14px) saturate(114%);
+}
+
+.accentPanel {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.018), rgba(255, 255, 255, 0.006));
+}
+
+.statusCard,
+.metricCard,
+.infoCard,
+.mediaQueueItem,
+.shareCard,
+.participantCard,
+.subtitleCard,
+.progressItem,
+.emptyState {
+    border: 1px solid var(--line-soft);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.012), rgba(255, 255, 255, 0.002));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 6px 16px rgba(151, 123, 125, 0.02);
+    backdrop-filter: blur(12px) saturate(112%);
+}
+
+.statusCard strong,
+.metricCard strong,
+.infoTitle,
+.mediaQueueTitle,
+.subtitleTitle,
+.participantName,
+.progressTitle {
+    margin-top: 2px;
+}
+
+.statusLabel,
+.metricLabel {
+    display: block;
+    min-height: 2.5em;
+    line-height: 1.35;
+}
+
+.notice.success {
+    background: rgba(77, 213, 120, 0.06);
+}
+
+.notice.error,
+.inlineError,
+.emptyState.errorState {
+    background: rgba(255, 127, 149, 0.045);
+}
+
+.compactInfoCard {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.01), rgba(255, 255, 255, 0.001));
+}
+
+.emphasisCard {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.014), rgba(255, 255, 255, 0.003));
+}
+
+.mediaQueueItem.selected {
+    box-shadow:
+        0 0 0 1px rgba(170, 143, 177, 0.12),
+        0 14px 28px rgba(190, 109, 63, 0.08);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.016), rgba(255, 255, 255, 0.003));
+}
+
+.secondaryButton,
+.ghostButton,
+.successButton {
+    border: var(--button-border);
+    font-weight: 600;
+    box-shadow: var(--button-shadow);
+}
+
+.secondaryButton:hover,
+.ghostButton:hover,
+.successButton:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--button-shadow-hover);
+}
+
+.secondaryButton:active,
+.ghostButton:active,
+.successButton:active {
+    transform: translateY(0);
+}
+
+.successButton {
+    padding: var(--button-padding);
+    border-radius: var(--button-radius);
+    color: #2f6140;
+    border-color: rgba(107, 193, 132, 0.34);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(236, 247, 239, 0.72)),
+        rgba(109, 223, 145, 0.18);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.34),
+        0 10px 22px rgba(117, 161, 126, 0.12);
+}
+
+.successButton:hover {
+    border-color: rgba(93, 181, 119, 0.42);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        0 14px 28px rgba(117, 161, 126, 0.16);
+}
+
+.selectInput {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(250, 240, 234, 0.8)),
+        rgba(255, 248, 244, 0.8);
+}
+
+.successButton:focus-visible,
+.selectInput:focus,
+.secondaryButton:focus-visible,
+.ghostButton:focus-visible,
+.windowControlButton:focus-visible,
+.toggleButton:focus-visible {
+    outline: none;
+    border-color: var(--button-focus-border);
+    box-shadow: var(--button-focus-ring);
+}

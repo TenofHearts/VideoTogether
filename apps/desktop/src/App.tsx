@@ -1434,7 +1434,7 @@ export default function App() {
                         <h2>Previous Uploads</h2>
                     </div>
                     <button
-                        className="ghostButton"
+                        className="successButton"
                         onClick={() => void refreshRecentMedia()}
                         type="button"
                     >
@@ -1495,7 +1495,7 @@ export default function App() {
                 {isOperations && media && (
                     <div className="actionsRow secondaryActionsRow">
                         <button
-                            className="secondaryButton"
+                            className="successButton"
                             disabled={
                                 uploadState === 'working' ||
                                 deleteState === 'working' ||
@@ -1561,7 +1561,7 @@ export default function App() {
                         type="file"
                     />
                     <button
-                        className="primaryButton"
+                        className="successButton"
                         disabled={hasActiveRoom}
                         onClick={() => fileInputRef.current?.click()}
                         type="button"
@@ -1569,7 +1569,7 @@ export default function App() {
                         Pick local movie
                     </button>
                     <button
-                        className="secondaryButton"
+                        className="successButton"
                         disabled={
                             !selectedFile ||
                             !status ||
@@ -1641,14 +1641,14 @@ export default function App() {
                                 type="file"
                             />
                             <button
-                                className="primaryButton"
+                                className="successButton"
                                 onClick={() => subtitleInputRef.current?.click()}
                                 type="button"
                             >
                                 Pick subtitle file
                             </button>
                             <button
-                                className="secondaryButton"
+                                className="successButton"
                                 disabled={
                                     !selectedSubtitleFile ||
                                     !status ||
@@ -1843,7 +1843,7 @@ export default function App() {
 
                         <div className="actionsRow">
                             <button
-                                className="primaryButton"
+                                className="successButton"
                                 disabled={
                                     media.status !== 'ready' || roomState === 'working'
                                 }
@@ -1943,7 +1943,7 @@ export default function App() {
                                 <span className="shareLabel">{link.label}</span>
                                 <p className="shareValue">{link.value}</p>
                                 <button
-                                    className="ghostButton"
+                                    className="successButton"
                                     onClick={() =>
                                         void copyText(link.value, `${link.label} copied.`)
                                     }
@@ -2320,8 +2320,7 @@ export default function App() {
                 >
                     <span className="windowChromeMark" aria-hidden="true" />
                     <div className="windowChromeCopy" data-tauri-drag-region>
-                        <strong>VideoTogether</strong>
-                        <p className="windowChromeEyebrow">Desktop host console</p>
+                        <strong>VideoTogether</strong>
                     </div>
                 </div>
 
@@ -2370,10 +2369,10 @@ export default function App() {
                 <header className="appBar">
                     <div className="appBarBrand">
 
-                        <h1>Dual-view host console</h1>
+                        <h1>VideoTogether Server Console</h1>
                         <p className="copy">
-                            Switch between action flow and telemetry flow without mixing the
-                            two interaction models.
+                            Manage the local VideoTogether desktop host, prepare media,
+                            create rooms, and monitor the current session from one place.
                         </p>
                     </div>
 
@@ -2451,19 +2450,11 @@ export default function App() {
                         <div className="workspaceColumn">
                             {renderMediaLibrary('operations')}
                             {renderImportMovieSection()}
-                            {renderSubtitlesSection()}
-                            <div
-                                aria-hidden="true"
-                                className="surfacePanel workspaceSpacer"
-                            />
+                            {renderSubtitlesSection()}
                         </div>
                         <div className="workspaceColumn">
                             {renderRoomControlsSection()}
-                            {renderShareSection()}
-                            <div
-                                aria-hidden="true"
-                                className="surfacePanel workspaceSpacer"
-                            />
+                            {renderShareSection()}
                         </div>
                     </section>
                 ) : (
@@ -2471,26 +2462,14 @@ export default function App() {
                         <div className="workspaceColumn">
                             {renderMediaLibrary('monitoring')}
                             {renderHostSummarySection()}
-                            {renderParticipantsSection()}
-                            <div
-                                aria-hidden="true"
-                                className="surfacePanel workspaceSpacer"
-                            />
+                            {renderParticipantsSection()}
                         </div>
                         <div className="workspaceColumn">
-                            {renderCurrentMovieSection()}
-                            <div
-                                aria-hidden="true"
-                                className="surfacePanel workspaceSpacer"
-                            />
+                            {renderCurrentMovieSection()}
                         </div>
                         <div className="workspaceColumn">
                             {renderRoomOverviewSection()}
-                            {renderDiagnosticsSection()}
-                            <div
-                                aria-hidden="true"
-                                className="surfacePanel workspaceSpacer"
-                            />
+                            {renderDiagnosticsSection()}
                         </div>
                     </section>
                 )}
