@@ -148,6 +148,47 @@ video {
     background: linear-gradient(135deg, rgba(185, 107, 24, 0.36), rgba(97, 214, 130, 0.26), rgba(127, 61, 232, 0.34)) !important;
 }
 
+.selectInput {
+    width: 100%;
+    min-width: 0;
+    border-radius: 999px;
+    padding: 12px 18px;
+    border: 1px solid rgba(170, 143, 177, 0.22);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(250, 240, 234, 0.68)),
+        rgba(255, 248, 244, 0.74);
+    color: var(--text-main);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.45),
+        0 10px 22px rgba(151, 123, 125, 0.08);
+    transition:
+        transform 180ms ease,
+        background 180ms ease,
+        border-color 180ms ease,
+        color 180ms ease,
+        box-shadow 180ms ease;
+}
+
+.selectInput:focus {
+    outline: none;
+    border-color: rgba(77, 213, 120, 0.62);
+    box-shadow: 0 0 0 3px rgba(77, 213, 120, 0.18);
+}
+
+select.selectInput {
+    appearance: none;
+    padding-right: 48px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4 6 4 4 4-4' stroke='%23715f7f' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    background-size: 14px;
+}
+
+.selectInput option {
+    color: #4d3b58;
+    background: #f5ece6;
+}
+
 .statusBadge {
     display: inline-flex;
     align-items: center;
@@ -186,9 +227,9 @@ video {
 }
 
 .subtitleSelect {
-    background: transparent !important;
-    border-color: rgba(120, 98, 146, 0.42) !important;
-    box-shadow: 0 0 0 1px rgba(120, 98, 146, 0.16) !important;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(250, 240, 234, 0.8)),
+        rgba(255, 248, 244, 0.8) !important;
 }
 
 .noticeCard {

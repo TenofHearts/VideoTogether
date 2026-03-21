@@ -1635,7 +1635,14 @@ export default function App() {
                             <div className="flex items-center justify-between gap-3">
                                 <p className="text-sm font-semibold text-slate-900 sm:text-base">
                                     <span className="text-slate-500">Author:</span>{' '}
-                                    <span className="tracking-[0.01em]">Jin Ye</span>
+                                    <a
+                                        className="tracking-[0.01em] underline decoration-slate-400/70 underline-offset-2 hover:decoration-slate-900"
+                                        href="https://tenofhearts.github.io/"
+                                        rel="noreferrer"
+                                        target="_blank"
+                                    >
+                                        Jin Ye
+                                    </a>
                                 </p>
                                 <span className="inline-flex items-center rounded-full border border-slate-300 px-2.5 py-1 text-[0.68rem] font-medium uppercase tracking-[0.14em] text-slate-600">
                                     {appVersion}
@@ -1688,13 +1695,10 @@ export default function App() {
                         <section className="rounded-[1.75rem] border border-white/70 p-4 shadow-panel sm:rounded-[2rem] sm:p-6">
                             <div className="flex flex-col gap-5">
                                 <div>
-                                    <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                                        {route.kind === 'room' ? 'Watch' : 'Playback'}
-                                    </p>
-                                    <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
+                                    <h2 className="font-serif text-2xl sm:text-3xl">
                                         {playbackMedia && canPlayMedia
-                                            ? 'Video player'
-                                            : 'Ready to watch'}
+                                            ? 'Video Player'
+                                            : 'Ready To Watch'}
                                     </h2>
                                 </div>
 
@@ -1739,12 +1743,9 @@ export default function App() {
                             <section className="rounded-[1.75rem] border border-white/70 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
-                                        <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
-                                            Subtitles
-                                        </p>
-                                        <p className="mt-2 text-lg break-words font-semibold text-slate-900">
-                                            Track selection
-                                        </p>
+                                        <h2 className="font-serif text-2xl sm:text-3xl">
+                                            Subtitle Selection
+                                        </h2>
                                     </div>
                                     {subtitleSaving && (
                                         <span className="self-start shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium text-slate-600 sm:self-auto">
@@ -1752,9 +1753,9 @@ export default function App() {
                                         </span>
                                     )}
                                 </div>
-                                <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
+                                <div className="mt-4">
                                     <select
-                                        className="subtitleSelect min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                                        className="selectInput subtitleSelect min-w-0 w-full text-sm"
                                         disabled={subtitleState.data.length === 0 || subtitleSaving}
                                         onChange={(event) =>
                                             void saveSubtitleSelection(
@@ -1770,11 +1771,6 @@ export default function App() {
                                             </option>
                                         ))}
                                     </select>
-                                    <p className="text-sm leading-6 text-slate-600 lg:max-w-[220px] lg:justify-self-end">
-                                        {route.kind === 'room'
-                                            ? 'Changes sync through the room state.'
-                                            : 'Open a room to make subtitle selection shared.'}
-                                    </p>
                                 </div>
                                 {subtitleState.kind === 'error' && (
                                     <p className="mt-3 rounded-xl bg-red-50 p-3 text-red-700">
@@ -1787,11 +1783,8 @@ export default function App() {
                             <section className="rounded-[1.75rem] border border-white/70 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                     <div>
-                                        <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                                            Room
-                                        </p>
-                                        <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                                            Watch session
+                                        <h2 className="font-serif text-2xl sm:text-3xl">
+                                            Watch Session
                                         </h2>
                                     </div>
                                     {route.kind === 'room' && (
@@ -1934,11 +1927,8 @@ export default function App() {
 
                         {currentRoom && (
                             <section className="rounded-[1.75rem] border border-slate-200 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
-                                <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                                    Participants
-                                </p>
-                                <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                                    Room presence
+                                <h2 className="font-serif text-2xl sm:text-3xl">
+                                    Room Presence
                                 </h2>
                                 <div className="mt-4 flex flex-col gap-3">
                                     {currentRoom.participants.map((participant) => (
@@ -1968,11 +1958,8 @@ export default function App() {
                         {playbackMedia && canPlayMedia && (
                             <>
                                 <section className="rounded-[1.75rem] border border-slate-200 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
-                                    <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                                        Media
-                                    </p>
-                                    <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                                        File details
+                                    <h2 className="font-serif text-2xl sm:text-3xl">
+                                        File Details
                                     </h2>
                                     <div className="innerPanel mt-4 min-w-0 rounded-[1.5rem] p-5 text-sm text-slate-700">
                                         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">
@@ -2001,11 +1988,8 @@ export default function App() {
                                 <section className="rounded-[1.75rem] border border-slate-200 p-5 shadow-panel sm:rounded-[2rem] sm:p-6">
                                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                         <div>
-                                            <p className="text-sm uppercase tracking-[0.25em] text-coral">
-                                                Player
-                                            </p>
-                                            <h2 className="mt-2 font-serif text-2xl sm:text-3xl">
-                                                Stream state
+                                            <h2 className="font-serif text-2xl sm:text-3xl">
+                                                Stream State
                                             </h2>
                                         </div>
                                         <span className={`self-start shrink-0 whitespace-nowrap sm:self-auto ${getPlayerStateBadgeClass(playerState)}`}>
