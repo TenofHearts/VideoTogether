@@ -26,7 +26,9 @@ limitations under the License.
     background:
         radial-gradient(circle at 14% 14%, rgba(228, 127, 18, 0.34), transparent 44%),
         radial-gradient(circle at 50% 50%, rgba(91, 220, 128, 0.26), transparent 38%),
+        radial-gradient(circle at 69% 31%, rgba(91, 220, 128, 0.2), transparent 22%),
         radial-gradient(circle at 88% 12%, rgba(91, 220, 128, 0.2), transparent 30%),
+        radial-gradient(circle at 31% 69%, rgba(91, 220, 128, 0.2), transparent 22%),
         radial-gradient(circle at 12% 88%, rgba(91, 220, 128, 0.2), transparent 30%),
         radial-gradient(circle at 86% 86%, rgba(105, 54, 212, 0.34), transparent 44%),
         linear-gradient(135deg, #f3ede4 0%, #e8efe6 48%, #e4e8f1 100%);
@@ -215,6 +217,7 @@ video {
     border-color: rgba(120, 98, 146, 0.24);
     color: rgba(89, 67, 98, 0.86);
 }
+
 .subtitleSelect {
     background: transparent !important;
     border-color: rgba(120, 98, 146, 0.42) !important;
