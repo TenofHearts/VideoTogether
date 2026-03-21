@@ -1264,12 +1264,12 @@ select.selectInput {
 .appBar {
     border: 1px solid rgba(129, 104, 140, 0.16);
     background:
-        radial-gradient(circle at top right, rgba(206, 132, 48, 0.2), transparent 32%),
-        radial-gradient(circle at left center, rgba(77, 213, 120, 0.232), transparent 34%),
-        radial-gradient(circle at 49% 27%, rgba(104, 54, 212, 0.19), transparent 25%),
-        radial-gradient(circle at 32% 50%, rgba(91, 207, 233, 0.341), transparent 22%),
-        radial-gradient(circle at 68% 64%, rgba(235, 51, 88, 0.225), transparent 23%),
-        linear-gradient(180deg, rgba(247, 239, 232, 0.9), rgba(241, 232, 226, 0.9));
+        radial-gradient(circle at top right, rgba(206, 132, 48, 0.368), transparent 32%),
+        radial-gradient(circle at left center, rgba(77, 213, 120, 0.39), transparent 34%),
+        radial-gradient(circle at 49% 27%, rgba(104, 54, 212, 0.334), transparent 25%),
+        radial-gradient(circle at 32% 50%, rgba(91, 207, 233, 0.41), transparent 22%),
+        radial-gradient(circle at 68% 64%, rgba(235, 51, 88, 0.359), transparent 23%),
+        linear-gradient(180deg, rgba(177, 177, 181, 0.8), rgba(160, 160, 170, 0.8));
     backdrop-filter: blur(12px) saturate(120%);
 }
 
