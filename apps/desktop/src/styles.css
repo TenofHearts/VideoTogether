@@ -1090,10 +1090,7 @@ select.selectInput {
     padding: 14px 18px;
     border-radius: 20px;
     border: 1px solid rgba(129, 104, 140, 0.16);
-    background:
-        radial-gradient(circle at left top, rgba(77, 213, 120, 0.4), transparent 52%),
-        radial-gradient(circle at right center, rgba(206, 131, 48, 0.22), transparent 40%),
-        linear-gradient(180deg, rgba(249, 241, 235, 0.96), rgba(243, 232, 227, 0.94));
+    background: transparent;
     color: var(--text-main);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.38),
