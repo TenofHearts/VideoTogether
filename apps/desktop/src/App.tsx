@@ -145,12 +145,6 @@ function getStatusText(status: Media['status']): string {
     }
 }
 
-function buildPlayerUrl(baseUrl: string, mediaId: string): string {
-    const url = new URL(baseUrl);
-    url.searchParams.set('mediaId', mediaId);
-    return url.toString();
-}
-
 function buildRoomPlayerUrl(baseUrl: string, token: string): string {
     const url = new URL(baseUrl);
     const normalizedPath = url.pathname.endsWith('/')
@@ -352,12 +346,6 @@ export default function App() {
     const [isWindowFocused, setIsWindowFocused] = useState(true);
 
     const hasActiveRoom = room?.room.status === 'active';
-    const localRoomPlayerUrl =
-        room && status ? buildRoomPlayerUrl(status.webUrl, room.room.token) : null;
-    const publicRoomPlayerUrl =
-        room && status?.publicWebUrl
-            ? buildRoomPlayerUrl(status.publicWebUrl, room.room.token)
-            : null;
     const lanRoomPlayerUrl =
         room && status?.lanWebUrl
             ? buildRoomPlayerUrl(status.lanWebUrl, room.room.token)
@@ -375,32 +363,6 @@ export default function App() {
                 hostParticipant.displayName
             )
             : null;
-    const publicHostRoomPlayerUrl =
-        room && status?.publicWebUrl && hostParticipant
-            ? buildParticipantRoomUrl(
-                status.publicWebUrl,
-                room.room.token,
-                hostParticipant.id,
-                hostParticipant.displayName
-            )
-            : null;
-    const playerUrl =
-        media && status ? buildPlayerUrl(status.webUrl, media.id) : null;
-    const publicPlayerUrl =
-        media && status?.publicWebUrl
-            ? buildPlayerUrl(status.publicWebUrl, media.id)
-            : null;
-    const lanPlayerUrl =
-        media && status?.lanWebUrl
-            ? buildPlayerUrl(status.lanWebUrl, media.id)
-            : null;
-    const secondaryPlayerUrl = publicPlayerUrl ?? lanPlayerUrl;
-    const secondaryPlayerLabel = publicPlayerUrl
-        ? 'ngrok player preview'
-        : 'LAN player preview';
-    const secondaryPlayerCopyLabel = publicPlayerUrl
-        ? 'Copy ngrok player URL'
-        : 'Copy LAN player URL';
     const selectedSubtitle =
         subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ??
         null;
@@ -2180,9 +2142,9 @@ export default function App() {
                                             </span>
                                             <span
                                                 className={`pill ${participant.connectionState ===
-                                                        'connected'
-                                                        ? 'activePill'
-                                                        : 'mutedPill'
+                                                    'connected'
+                                                    ? 'activePill'
+                                                    : 'mutedPill'
                                                     }`}
                                             >
                                                 {getParticipantConnectionLabel(participant)}
@@ -2223,7 +2185,7 @@ export default function App() {
                         <h2>Server Health</h2>
                     </div>
                     <button
-                        className="ghostButton"
+                        className="successButton"
                         onClick={() => void refreshDiagnostics()}
                         type="button"
                     >
@@ -2320,7 +2282,8 @@ export default function App() {
                 >
                     <span className="windowChromeMark" aria-hidden="true" />
                     <div className="windowChromeCopy" data-tauri-drag-region>
-                        <strong>VideoTogether</strong>
+                        <strong>VideoTogether</strong>
+
                     </div>
                 </div>
 
@@ -2450,11 +2413,13 @@ export default function App() {
                         <div className="workspaceColumn">
                             {renderMediaLibrary('operations')}
                             {renderImportMovieSection()}
-                            {renderSubtitlesSection()}
+                            {renderSubtitlesSection()}
+
                         </div>
                         <div className="workspaceColumn">
                             {renderRoomControlsSection()}
-                            {renderShareSection()}
+                            {renderShareSection()}
+
                         </div>
                     </section>
                 ) : (
@@ -2462,14 +2427,17 @@ export default function App() {
                         <div className="workspaceColumn">
                             {renderMediaLibrary('monitoring')}
                             {renderHostSummarySection()}
-                            {renderParticipantsSection()}
+                            {renderParticipantsSection()}
+
                         </div>
                         <div className="workspaceColumn">
-                            {renderCurrentMovieSection()}
+                            {renderCurrentMovieSection()}
+
                         </div>
                         <div className="workspaceColumn">
                             {renderRoomOverviewSection()}
-                            {renderDiagnosticsSection()}
+                            {renderDiagnosticsSection()}
+
                         </div>
                     </section>
                 )}

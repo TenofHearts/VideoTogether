@@ -14,12 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 
 import type {
     Media,
-    MediaListResponse,
     MediaSubtitlesResponse,
     Participant,
     PlaybackState,
@@ -27,12 +26,9 @@ import type {
     Room,
     RoomJoinResponse,
     RoomLookupResponse,
-    ServiceHealth,
-    Subtitle,
-    SystemStatus
+    Subtitle
 } from '@videoshare/shared-types';
 import {
-    buildRoomUrl,
     buildUrlFromBase,
     formatTimestamp,
     getApiBaseUrl
@@ -40,26 +36,11 @@ import {
 
 import { loadHlsConstructor, type HlsErrorData } from './lib/hls';
 
-type HealthState =
-    | { kind: 'loading' }
-    | { kind: 'error'; message: string }
-    | { kind: 'success'; data: ServiceHealth };
-
-type SystemState =
-    | { kind: 'loading' }
-    | { kind: 'error'; message: string }
-    | { kind: 'success'; data: SystemStatus };
-
 type SocketState =
     | { kind: 'idle'; message: string }
     | { kind: 'connecting'; message: string }
     | { kind: 'connected'; message: string; socketId: string }
     | { kind: 'error'; message: string };
-
-type RecentMediaState =
-    | { kind: 'loading' }
-    | { kind: 'error'; message: string }
-    | { kind: 'success'; data: Media[] };
 
 type SelectedMediaState =
     | { kind: 'idle' }
@@ -299,20 +280,6 @@ function getParticipantBadge(participant: Participant): string {
     return `${roleLabel} ${stateLabel}`;
 }
 
-function getStatusBadgeClass(status: Media['status']): string {
-    switch (status) {
-        case 'ready':
-            return 'statusBadge statusBadgeReady';
-        case 'processing':
-        case 'pending':
-            return 'statusBadge statusBadgeProcessing';
-        case 'error':
-            return 'statusBadge statusBadgeError';
-        default:
-            return 'statusBadge statusBadgeMuted';
-    }
-}
-
 function getParticipantBadgeClass(participant: Participant): string {
     return participant.connectionState === 'connected'
         ? 'statusBadge statusBadgeReady'
@@ -418,66 +385,13 @@ function clearParticipantSession(token: string): void {
     }
 }
 
-type RoomAccessInput = {
-    token: string;
-    participantId: string | null;
-    displayName: string | null;
-};
-
-function extractRoomAccess(input: string): RoomAccessInput {
-    const trimmed = input.trim();
-    if (!trimmed) {
-        return {
-            token: '',
-            participantId: null,
-            displayName: null
-        };
-    }
-
-    try {
-        const url = new URL(trimmed);
-        const segments = url.pathname
-            .replace(/\/+$/, '')
-            .split('/')
-            .filter(Boolean);
-
-        if (
-            segments[segments.length - 2] === 'room' &&
-            segments[segments.length - 1]
-        ) {
-            return {
-                token: decodeURIComponent(segments[segments.length - 1]),
-                participantId: url.searchParams.get('participantId'),
-                displayName: url.searchParams.get('displayName')
-            };
-        }
-    } catch {
-        return {
-            token: trimmed.replace(/^\/+|\/+$/g, ''),
-            participantId: null,
-            displayName: null
-        };
-    }
-
-    return {
-        token: trimmed,
-        participantId: null,
-        displayName: null
-    };
-}
-
 export default function App() {
     const [route, setRoute] = useState<RouteState>(() =>
         parseRouteFromLocation()
     );
-    const [health, setHealth] = useState<HealthState>({ kind: 'loading' });
-    const [system, setSystem] = useState<SystemState>({ kind: 'loading' });
     const [socketState, setSocketState] = useState<SocketState>({
         kind: 'idle',
         message: 'Join a room to activate realtime presence.'
-    });
-    const [recentMedia, setRecentMedia] = useState<RecentMediaState>({
-        kind: 'loading'
     });
     const [selectedMedia, setSelectedMedia] = useState<SelectedMediaState>({
         kind: 'idle'
@@ -496,7 +410,6 @@ export default function App() {
     const [subtitleMessage, setSubtitleMessage] = useState<string | null>(null);
     const [syncMessage, setSyncMessage] = useState<string | null>(null);
     const [subtitleSaving, setSubtitleSaving] = useState(false);
-    const [roomInput, setRoomInput] = useState('');
     const [displayNameInput, setDisplayNameInput] = useState('Guest');
     const [notice, setNotice] = useState<string | null>(null);
     const [roomRefreshNonce, setRoomRefreshNonce] = useState(0);
@@ -725,7 +638,7 @@ export default function App() {
 
         updatePlaybackMetrics();
 
-        const eventNames: Array<keyof HTMLMediaElementEventMap> = [
+        const eventNames = [
             'timeupdate',
             'progress',
             'ratechange',
@@ -763,7 +676,6 @@ export default function App() {
             setDisplayNameInput(
                 route.displayName ?? getStoredDisplayName(route.token)
             );
-            setRoomInput(buildRoomUrl(window.location.origin, route.token));
             setRoomState({ kind: 'loading' });
             setJoinState({ kind: 'idle' });
             setSubtitleState({ kind: 'idle', data: [] });
@@ -789,103 +701,6 @@ export default function App() {
         route.kind === 'room' ? route.displayName : null,
         route.kind === 'room' ? route.participantId : null
     ]);
-
-    useEffect(() => {
-        let cancelled = false;
-
-        async function loadHealth() {
-            try {
-                const response = await fetch(`${apiBaseUrl}/health`);
-                if (!response.ok) {
-                    throw new Error(`Health check failed with ${response.status}`);
-                }
-                const data = (await response.json()) as ServiceHealth;
-                if (!cancelled) {
-                    setHealth({ kind: 'success', data });
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    setHealth({
-                        kind: 'error',
-                        message:
-                            error instanceof Error ? error.message : 'Unknown health error'
-                    });
-                }
-            }
-        }
-
-        async function loadSystem() {
-            try {
-                const response = await fetch(`${apiBaseUrl}/api/system/status`);
-                if (!response.ok) {
-                    throw new Error(`System status failed with ${response.status}`);
-                }
-                const data = (await response.json()) as SystemStatus;
-                if (!cancelled) {
-                    setSystem({ kind: 'success', data });
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    setSystem({
-                        kind: 'error',
-                        message:
-                            error instanceof Error ? error.message : 'Unknown system error'
-                    });
-                }
-            }
-        }
-
-        void loadHealth();
-        void loadSystem();
-        const timer = window.setInterval(() => {
-            void loadHealth();
-            void loadSystem();
-        }, 15000);
-
-        return () => {
-            cancelled = true;
-            window.clearInterval(timer);
-        };
-    }, []);
-
-    useEffect(() => {
-        if (route.kind === 'room') {
-            return;
-        }
-
-        let cancelled = false;
-
-        async function loadRecentMedia() {
-            try {
-                const response = await fetch(`${apiBaseUrl}/api/media`);
-                if (!response.ok) {
-                    throw new Error(`Media list failed with ${response.status}`);
-                }
-                const data = (await response.json()) as MediaListResponse;
-                if (!cancelled) {
-                    setRecentMedia({ kind: 'success', data: data.media });
-                }
-            } catch (error) {
-                if (!cancelled) {
-                    setRecentMedia({
-                        kind: 'error',
-                        message:
-                            error instanceof Error ? error.message : 'Unknown media error'
-                    });
-                }
-            }
-        }
-
-        void loadRecentMedia();
-        const timer = window.setInterval(() => {
-            void loadRecentMedia();
-        }, 15000);
-
-        return () => {
-            cancelled = true;
-            window.clearInterval(timer);
-        };
-    }, [route.kind]);
 
     useEffect(() => {
         if (!roomToken) {
@@ -1790,30 +1605,6 @@ export default function App() {
         setRoute({ kind: 'home', mediaId });
     }
 
-    function openRoom(access: RoomAccessInput) {
-        const nextUrl = new URL(window.location.href);
-        nextUrl.pathname = buildAppPath(
-            `/room/${encodeURIComponent(access.token)}`
-        );
-        nextUrl.search = '';
-
-        if (access.participantId) {
-            nextUrl.searchParams.set('participantId', access.participantId);
-        }
-
-        if (access.displayName) {
-            nextUrl.searchParams.set('displayName', access.displayName);
-        }
-
-        window.history.pushState({}, '', nextUrl);
-        setRoute({
-            kind: 'room',
-            token: access.token,
-            participantId: access.participantId,
-            displayName: access.displayName
-        });
-    }
-
     function retryRoomLookup() {
         setNotice('Retrying room lookup...');
         setRoomState({ kind: 'loading' });
@@ -1823,16 +1614,6 @@ export default function App() {
     function retryRealtimeConnection() {
         setNotice('Retrying realtime connection...');
         setRealtimeRetryNonce((current) => current + 1);
-    }
-
-    function handleRoomSubmit(event: FormEvent<HTMLFormElement>) {
-        event.preventDefault();
-        const access = extractRoomAccess(roomInput);
-        if (!access.token) {
-            setNotice('Paste a full room URL or token first.');
-            return;
-        }
-        openRoom(access);
     }
 
     return (
