@@ -51,6 +51,7 @@ struct DesktopStatus {
     api_base_url: String,
     web_url: String,
     public_web_url: Option<String>,
+    lan_ip: Option<String>,
     lan_api_base_url: Option<String>,
     lan_web_url: Option<String>,
     tauri: &'static str,
@@ -328,6 +329,113 @@ fn resolve_local_web_url(configured_web_url: &str, api_base_url: &str) -> String
         .unwrap_or_else(|| api_base_url.to_string())
 }
 
+fn upsert_env_value(contents: &str, key: &str, value: &str) -> String {
+    let newline = if contents.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut lines: Vec<String> = contents.lines().map(|line| line.to_string()).collect();
+    let mut replaced = false;
+
+    for line in &mut lines {
+        let trimmed = line.trim_start();
+
+        let Some((existing_key, _)) = trimmed.split_once('=') else {
+            continue;
+        };
+
+        if existing_key.trim() != key {
+            continue;
+        }
+
+        let leading_whitespace_len = line.len().saturating_sub(trimmed.len());
+        let leading_whitespace = &line[..leading_whitespace_len];
+        *line = format!("{leading_whitespace}{key}={value}");
+        replaced = true;
+        break;
+    }
+
+    if !replaced {
+        lines.push(format!("{key}={value}"));
+    }
+
+    let mut next_contents = lines.join(newline);
+
+    if !next_contents.ends_with(newline) {
+        next_contents.push_str(newline);
+    }
+
+    next_contents
+}
+
+fn write_env_value(path: &std::path::Path, key: &str, value: &str) -> Result<(), String> {
+    let current = std::fs::read_to_string(path).unwrap_or_default();
+    let next = upsert_env_value(&current, key, value);
+
+    std::fs::write(path, next).map_err(|error| {
+        format!(
+            "failed to update {} at {}: {error}",
+            key,
+            path.display()
+        )
+    })
+}
+
+#[cfg(debug_assertions)]
+fn resolve_lan_ip_env_path() -> Result<std::path::PathBuf, String> {
+    let current_directory = std::env::current_dir()
+        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
+    let workspace_root = find_workspace_root(&current_directory)
+        .ok_or_else(|| "failed to locate workspace root".to_string())?;
+    let env_override_path = workspace_root.join(".env");
+
+    if env_override_path.is_file() {
+        return Ok(env_override_path);
+    }
+
+    Ok(workspace_root.join(".env.example"))
+}
+
+#[cfg(not(debug_assertions))]
+fn resolve_lan_ip_env_path() -> Result<PathBuf, String> {
+    if let Some(path) = resolve_runtime_env_path() {
+        return Ok(path);
+    }
+
+    let runtime_dir = env::var("VIDEOSHARE_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .map_err(|error| format!("missing VIDEOSHARE_RUNTIME_DIR: {error}"))?;
+    let env_override_path = runtime_dir.join(RUNTIME_ENV_OVERRIDE_FILE_NAME);
+
+    if env_override_path.is_file() {
+        return Ok(env_override_path);
+    }
+
+    let env_template_path = runtime_dir.join(RUNTIME_ENV_TEMPLATE_FILE_NAME);
+
+    if !env_template_path.is_file() {
+        write(&env_template_path, default_release_env_template()).map_err(|error| {
+            format!(
+                "failed to initialize runtime env template at {}: {error}",
+                env_template_path.display()
+            )
+        })?;
+    }
+
+    Ok(env_template_path)
+}
+
+#[tauri::command]
+fn set_lan_ip(lan_ip: String) -> Result<(), String> {
+    let normalized = lan_ip.trim();
+
+    if normalized.is_empty() {
+        return Err("LAN_IP cannot be empty".to_string());
+    }
+
+    let env_path = resolve_lan_ip_env_path()?;
+    write_env_value(&env_path, "LAN_IP", normalized)?;
+    std::env::set_var("LAN_IP", normalized);
+    Ok(())
+}
+
 #[cfg(not(debug_assertions))]
 const SERVER_HOST: &str = "0.0.0.0";
 #[cfg(not(debug_assertions))]
@@ -472,35 +580,15 @@ fn normalize_server_host(host: String) -> String {
 }
 
 #[cfg(not(debug_assertions))]
-fn resolve_release_server_port(server_host: &str, preferred_port: &str) -> IoResult<String> {
-    let preferred_port = preferred_port.parse::<u16>().map_err(|error| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("invalid release server port {preferred_port}: {error}"),
-        )
-    })?;
-
-    match TcpListener::bind((server_host, preferred_port)) {
-        Ok(listener) => {
-            drop(listener);
-            Ok(preferred_port.to_string())
-        }
-        Err(error) if error.kind() == ErrorKind::AddrInUse => {
-            let listener = TcpListener::bind((server_host, 0))?;
-            let port = listener.local_addr()?.port();
-            drop(listener);
-            Ok(port.to_string())
-        }
-        Err(error) => Err(error),
-    }
+fn resolve_release_server_port(server_host: &str) -> IoResult<String> {
+    let listener = TcpListener::bind((server_host, 0))?;
+    let port = listener.local_addr()?.port();
+    drop(listener);
+    Ok(port.to_string())
 }
 
 #[cfg(not(debug_assertions))]
-fn remap_release_url_port(url: String, preferred_port: &str, actual_port: &str) -> String {
-    if preferred_port == actual_port {
-        return url;
-    }
-
+fn remap_release_url_port(url: String, actual_port: &str) -> String {
     let Ok(mut parsed_url) = Url::parse(&url) else {
         return url;
     };
@@ -510,14 +598,6 @@ fn remap_release_url_port(url: String, preferred_port: &str, actual_port: &str) 
     };
 
     if !is_loopback_host(host) {
-        return url;
-    }
-
-    let current_port = parsed_url
-        .port_or_known_default()
-        .map(|value| value.to_string());
-
-    if current_port.as_deref() != Some(preferred_port) {
         return url;
     }
 
@@ -710,18 +790,16 @@ fn setup_release_server_sidecar<R: Runtime>(app: &mut tauri::App<R>) -> IoResult
     let server_host = normalize_server_host(
         get_release_setting(&release_config, "HOST").unwrap_or_else(|| SERVER_HOST.to_string()),
     );
-    let preferred_server_port =
-        get_release_setting(&release_config, "PORT").unwrap_or_else(|| SERVER_PORT.to_string());
-    let server_port = resolve_release_server_port(&server_host, &preferred_server_port)?;
+    let server_port = resolve_release_server_port(&server_host)?;
     let api_base_url = format!("http://localhost:{server_port}");
     let public_base_url = get_release_setting(&release_config, "PUBLIC_BASE_URL")
-        .map(|url| remap_release_url_port(url, &preferred_server_port, &server_port))
+        .map(|url| remap_release_url_port(url, &server_port))
         .unwrap_or_else(|| api_base_url.clone());
     let configured_web_url = get_release_setting(&release_config, "WEB_URL")
-        .map(|url| remap_release_url_port(url, &preferred_server_port, &server_port))
+        .map(|url| remap_release_url_port(url, &server_port))
         .unwrap_or_else(|| public_base_url.clone());
     let web_origin = get_release_setting(&release_config, "WEB_ORIGIN")
-        .map(|url| remap_release_url_port(url, &preferred_server_port, &server_port))
+        .map(|url| remap_release_url_port(url, &server_port))
         .unwrap_or_else(|| configured_web_url.clone());
     let lan_ip = get_release_setting(&release_config, "LAN_IP");
 
@@ -834,6 +912,7 @@ fn get_local_status() -> DesktopStatus {
         api_base_url: api_base_url.clone(),
         web_url: local_web_url.clone(),
         public_web_url,
+        lan_ip: lan_ip.clone(),
         lan_api_base_url: lan_ip
             .as_deref()
             .and_then(|ip| rewrite_url_host(&api_base_url, ip)),
@@ -858,7 +937,7 @@ fn setup_window_vibrancy<R: Runtime>(app: &tauri::App<R>) {
 pub fn run() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_local_status])
+        .invoke_handler(tauri::generate_handler![get_local_status, set_lan_ip])
         .setup(|app| {
             #[cfg(target_os = "windows")]
             setup_window_vibrancy(app);

@@ -208,6 +208,29 @@ function Get-LogTail([string]$Path, [int]$LineCount = 20) {
   return (Get-Content $Path | Select-Object -Last $LineCount) -join [Environment]::NewLine
 }
 
+function Stop-DockerHost([string]$ComposeEnvPath, [string]$RepoRoot) {
+  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    return
+  }
+
+  $previousErrorActionPreference = $ErrorActionPreference
+
+  try {
+    Set-Location $RepoRoot
+    $ErrorActionPreference = 'Continue'
+
+    if (Test-Path $ComposeEnvPath) {
+      & docker compose --env-file $ComposeEnvPath -f infra/docker-compose.yml down *> $null
+    } else {
+      & docker compose -f infra/docker-compose.yml down *> $null
+    }
+  } catch {
+    # Ignore Docker shutdown errors so local cleanup can still continue.
+  } finally {
+    $ErrorActionPreference = $previousErrorActionPreference
+  }
+}
+
 $envPath = if (Test-Path (Join-Path $repoRoot '.env')) {
   Join-Path $repoRoot '.env'
 } else {
@@ -418,4 +441,24 @@ if ($SkipDesktop) {
 Set-Location $repoRoot
 Set-ProcessEnv $runtimeEnv
 Write-Host 'Launching Tauri host dashboard...'
-& npm run tauri:dev --workspace @videoshare/desktop
+
+$desktopExitCode = 0
+
+try {
+  & npm run tauri:dev --workspace @videoshare/desktop
+  $desktopExitCode = $LASTEXITCODE
+} finally {
+  Write-Host 'Desktop session ended. Stopping host runtime...'
+
+  if ($useDocker) {
+    Stop-DockerHost -ComposeEnvPath $composeEnvPath -RepoRoot $repoRoot
+  } else {
+    Stop-TrackedProcess -PidPath $serverPidPath -Label 'local server'
+  }
+
+  Stop-TrackedProcess -PidPath $ngrokPidPath -Label 'ngrok'
+}
+
+if ($desktopExitCode -ne 0) {
+  exit $desktopExitCode
+}

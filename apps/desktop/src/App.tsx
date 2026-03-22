@@ -66,6 +66,7 @@ const fallbackStatus: DesktopStatus = {
     apiBaseUrl: 'http://localhost:3000',
     webUrl: 'http://localhost:3000',
     publicWebUrl: null,
+    lanIp: null,
     lanApiBaseUrl: null,
     lanWebUrl: null,
     tauri: 'ready'
@@ -335,10 +336,12 @@ export default function App() {
     const [roomSubtitleState, setRoomSubtitleState] =
         useState<ActionState>('idle');
     const [closeRoomState, setCloseRoomState] = useState<ActionState>('idle');
+    const [lanIpSaveState, setLanIpSaveState] = useState<ActionState>('idle');
     const [deleteState, setDeleteState] = useState<ActionState>('idle');
     const [deleteConfirmArmed, setDeleteConfirmArmed] = useState(false);
     const [processingQueued, setProcessingQueued] = useState(false);
     const [hostDisplayName, setHostDisplayName] = useState('Host');
+    const [lanIpInput, setLanIpInput] = useState('');
     const [message, setMessage] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -393,6 +396,15 @@ export default function App() {
     const monitoringStatusText = monitoringTarget
         ? getStatusText(monitoringTarget.status)
         : 'No target selected';
+    const normalizedLanIpInput = lanIpInput.trim();
+    const configuredLanIp = status?.lanIp?.trim() ?? '';
+    const effectiveLanIp = normalizedLanIpInput || configuredLanIp;
+    const hasPendingLanIpChange =
+        normalizedLanIpInput.length > 0 && normalizedLanIpInput !== configuredLanIp;
+    const createRoomBlockedByLanIp =
+        media?.status === 'ready' &&
+        roomState !== 'working' &&
+        effectiveLanIp.length === 0;
     const storageFolderPath =
         systemStatus.kind === 'success'
             ? getSharedStoragePath([
@@ -420,6 +432,22 @@ export default function App() {
             });
         }
     }
+
+    async function readDesktopStatus(): Promise<DesktopStatus> {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<DesktopStatus>('get_local_status');
+    }
+
+    async function persistLanIp(nextLanIp: string): Promise<DesktopStatus> {
+        const { invoke } = await import('@tauri-apps/api/core');
+
+        await invoke('set_lan_ip', {
+            lanIp: nextLanIp
+        });
+
+        return await invoke<DesktopStatus>('get_local_status');
+    }
+
     async function refreshRecentMedia() {
         if (!status) {
             return;
@@ -547,15 +575,16 @@ export default function App() {
 
         async function loadDesktopStatus() {
             try {
-                const { invoke } = await import('@tauri-apps/api/core');
-                const nextStatus = await invoke<DesktopStatus>('get_local_status');
+                const nextStatus = await readDesktopStatus();
 
                 if (!cancelled) {
                     setStatus(nextStatus);
+                    setLanIpInput(nextStatus.lanIp ?? '');
                 }
             } catch (reason) {
                 if (!cancelled) {
                     setStatus(fallbackStatus);
+                    setLanIpInput(fallbackStatus.lanIp ?? '');
                     setError(reason instanceof Error ? reason.message : String(reason));
                 }
             }
@@ -1144,12 +1173,27 @@ export default function App() {
             return;
         }
 
+        const manualLanIp = normalizedLanIpInput;
+        const existingLanIp = configuredLanIp;
+
+        if (!manualLanIp && !existingLanIp) {
+            setRoomState('error');
+            setError('Set LAN IP before creating a room.');
+            setMessage(null);
+            return;
+        }
+
         setRoomState('working');
         setCloseRoomState('idle');
         setError(null);
         setMessage('Creating a shareable room for the selected movie...');
 
         try {
+            if (manualLanIp) {
+                const nextStatus = await persistLanIp(manualLanIp);
+                setStatus(nextStatus);
+            }
+
             const defaultSubtitle =
                 subtitles.find((subtitle) => subtitle.id === selectedRoomSubtitleId) ??
                 subtitles.find((subtitle) => subtitle.isDefault) ??
@@ -1380,6 +1424,70 @@ export default function App() {
             setError(reason instanceof Error ? reason.message : 'Delete failed');
         }
     }
+
+    async function saveLanIpConfig() {
+        if (!status) {
+            return;
+        }
+
+        if (normalizedLanIpInput.length === 0) {
+            setLanIpSaveState('error');
+            setError('LAN_IP cannot be empty when saving.');
+            setMessage(null);
+            return;
+        }
+
+        setLanIpSaveState('working');
+        setError(null);
+        setMessage('Saving LAN_IP to .env or .env.example...');
+
+        try {
+            const nextStatus = await persistLanIp(normalizedLanIpInput);
+            setStatus(nextStatus);
+            setLanIpInput(nextStatus.lanIp ?? normalizedLanIpInput);
+            setLanIpSaveState('success');
+            setMessage('LAN_IP saved successfully.');
+        } catch (reason) {
+            setLanIpSaveState('error');
+            setError(reason instanceof Error ? reason.message : 'Failed to save LAN_IP');
+            setMessage(null);
+        }
+    }
+
+    function renderLanIpConfigSection() {
+        return (
+            <section className="surfacePanel opsLanConfig">
+                <h2>LAN IP Setting</h2>
+
+                <div className="lanIpInlineRow">
+                    <input
+                        className="selectInput"
+                        onChange={(event) => {
+                            setLanIpInput(event.target.value);
+                            setLanIpSaveState('idle');
+                        }}
+                        placeholder="e.g. 10.147.17.22"
+                        value={lanIpInput}
+                    />
+                    <button
+                        className="successButton"
+                        disabled={
+                            lanIpSaveState === 'working' ||
+                            normalizedLanIpInput.length === 0 ||
+                            !hasPendingLanIpChange
+                        }
+                        onClick={() => {
+                            void saveLanIpConfig();
+                        }}
+                        type="button"
+                    >
+                        {lanIpSaveState === 'working' ? 'Saving LAN_IP...' : 'Save LAN_IP'}
+                    </button>
+                </div>
+            </section>
+        );
+    }
+
     function renderMediaLibrary(viewMode: DashboardView) {
         const isOperations = viewMode === 'operations';
         const selectedId = isOperations ? media?.id : monitoringTarget?.id;
@@ -1810,6 +1918,11 @@ export default function App() {
                                     media.status !== 'ready' || roomState === 'working'
                                 }
                                 onClick={() => {
+                                    if (createRoomBlockedByLanIp) {
+                                        setCopyToast('请先设置 LAN IP 再创建房间。');
+                                        return;
+                                    }
+
                                     void createRoom();
                                 }}
                                 type="button"
@@ -2135,6 +2248,14 @@ export default function App() {
                                             <p className="participantName">
                                                 {participant.displayName}
                                             </p>
+                                            <div className="participantTimeline">
+                                                <p className="participantMeta">
+                                                    Joined {formatDateTime(participant.joinedAt)}
+                                                </p>
+                                                <p className="participantMeta">
+                                                    Last seen {formatDateTime(participant.lastSeenAt)}
+                                                </p>
+                                            </div>
                                         </div>
                                         <div className="participantBadges">
                                             <span className="pill">
@@ -2150,14 +2271,6 @@ export default function App() {
                                                 {getParticipantConnectionLabel(participant)}
                                             </span>
                                         </div>
-                                    </div>
-                                    <div className="participantTimeline">
-                                        <p className="participantMeta">
-                                            Joined {formatDateTime(participant.joinedAt)}
-                                        </p>
-                                        <p className="participantMeta">
-                                            Last seen {formatDateTime(participant.lastSeenAt)}
-                                        </p>
                                     </div>
                                 </div>
                             ))}
@@ -2411,6 +2524,7 @@ export default function App() {
                 {activeView === 'operations' ? (
                     <section className="workspaceGrid operationsGrid">
                         <div className="workspaceColumn">
+                            {renderLanIpConfigSection()}
                             {renderMediaLibrary('operations')}
                             {renderImportMovieSection()}
                             {renderSubtitlesSection()}
