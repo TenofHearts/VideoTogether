@@ -194,7 +194,7 @@ p {
 
 .appPill {
     padding: 8px 12px;
-    border: 1px solid rgba(103, 76, 143, 0.1);
+    border: 1px solid rgba(192, 196, 202, 0.62);
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-soft);
     font-size: 0.8rem;
@@ -351,13 +351,13 @@ p {
     gap: 20px;
     align-items: center;
     padding: 20px;
-    border: 1px solid rgba(129, 104, 140, 0.12);
+    border: 1px solid rgb(177, 181, 187);
     border-radius: 26px;
     background:
         radial-gradient(circle at top right, rgba(206, 131, 48, 0.18), transparent 26%),
         radial-gradient(circle at left center, rgba(77, 213, 120, 0.38), transparent 44%),
         linear-gradient(180deg, rgba(244, 233, 227, 0.98), rgba(241, 228, 223, 0.98));
-    box-shadow: var(--shadow-md);
+    box-shadow: 0 10px 24px rgba(134, 140, 148, 0.14);
 }
 
 .appBarBrand {
@@ -434,7 +434,7 @@ p {
 
 .toggleButton.active {
     color: #170f16;
-    border-color: rgba(190, 109, 63, 0.34);
+    border-color: rgba(146, 151, 158, 0.9);
     background: linear-gradient(135deg, #34cc66, #88df67, var(--accent-orange));
     box-shadow: 0 14px 28px rgba(255, 156, 73, 0.3);
 }
@@ -696,11 +696,14 @@ p {
 .selectInput:focus,
 .secondaryButton:focus-visible,
 .ghostButton:focus-visible,
-.windowControlButton:focus-visible,
 .toggleButton:focus-visible {
     outline: none;
     border-color: var(--button-focus-border);
     box-shadow: var(--button-focus-ring);
+}
+
+.windowControlButton:focus-visible {
+    outline: none;
 }
 
 select.selectInput {
@@ -1279,11 +1282,11 @@ select.selectInput {
 .appBar {
     border: 1px solid rgba(129, 104, 140, 0.16);
     background:
-        radial-gradient(circle at top right, rgba(104, 54, 212, 0.334), transparent 32%),
+        radial-gradient(circle at 93% 80%, rgba(104, 54, 212, 0.334), transparent 32%),
         radial-gradient(circle at 68% 64%, rgba(91, 207, 233, 0.41), transparent 23%),
         radial-gradient(circle at 49% 27%, rgba(77, 213, 120, 0.39), transparent 25%),
         radial-gradient(circle at 32% 50%, rgba(235, 51, 88, 0.359), transparent 22%),
-        radial-gradient(circle at left center, rgba(206, 132, 48, 0.695), transparent 34%),
+        radial-gradient(circle at 7% 12%, rgba(206, 132, 48, 0.695), transparent 34%),
         linear-gradient(180deg, rgba(177, 177, 181, 0.8), rgba(160, 160, 170, 0.8));
     backdrop-filter: blur(12px) saturate(120%);
 }
@@ -1429,7 +1432,6 @@ select.selectInput {
 .selectInput:focus,
 .secondaryButton:focus-visible,
 .ghostButton:focus-visible,
-.windowControlButton:focus-visible,
 .toggleButton:focus-visible {
     outline: none;
     border-color: var(--button-focus-border);
