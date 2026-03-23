@@ -4,8 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/TenofHearts/VideoTogether/releases"><img src="https://img.shields.io/badge/release-v1.4.0-orange" alt="GitHub release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue
-  " alt="Apache 2.0 License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue" alt="Apache 2.0 License"></a>
   <a href="README_zh.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-green"></a>
 </p>
 
