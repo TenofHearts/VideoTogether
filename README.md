@@ -1,6 +1,8 @@
 # VideoTogether
 
-<img src="./assets/img/image.png" alt="VideoTogether Banner" width="760" />
+<p align="center">
+    <img src="./assets/img/image.png" alt="VideoTogether Banner" width="760" />
+</p>
 
 <p align="center">
   <a href="https://github.com/TenofHearts/VideoTogether/releases"><img src="https://img.shields.io/badge/release-v1.4.0-orange" alt="GitHub release"></a>
