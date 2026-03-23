@@ -1,6 +1,13 @@
 # VideoTogether
 
-> [English](./README.md)
+<img src="./assets/img/image.png" alt="VideoTogether Banner" width="760" />
+
+<p align="center">
+  <a href="https://github.com/TenofHearts/VideoTogether/releases"><img src="https://img.shields.io/badge/release-v1.4.0-orange" alt="GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue
+  " alt="MIT License"></a>
+  <a href="README.md"><img src="https://img.shields.io/badge/Language-English-green"></a>
+</p>
 
 VideoTogether 是一个面向局域网内两人私密观影场景的视频同步应用。
 
@@ -76,7 +83,7 @@ infra/
                                        10.x.x.x
 ```
 
-你需要复制这个 IPv4 地址，并将它粘贴到 `.env.example` 文件中：
+你需要复制这个 IPv4 地址，并将它~~粘贴到 `.env.example` 文件中~~输入到应用中 `LAN IP` 输入框内：
 
 ```env
 ...
@@ -91,7 +98,8 @@ LAN_IP=10.x.x.x
 正如后文所述，如果你想和不在同一个物理局域网内的人共享视频，你需要用到 ZeroTier。在这种情况下，你需要：
 1. 下载并安装 ZeroTier
 2. 和你想共享视频的人加入同一个虚拟局域网
-3. 将你在 ZeroTier 面板中分配到的 IP 地址设置为 `.env.example` 中的 `LAN_IP`。
+3. ~~将你在 ZeroTier 面板中分配到的 IP 地址设置为 `.env.example` 中的 `LAN_IP`。~~ 运行应用并配置你的局域网IP
+4. 和你的朋友一起看电影吧!
 
 成功配置 ZeroTier 后，运行 `ipconfig` 你应该会看到类似如下的信息：
 ```

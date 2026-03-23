@@ -1,6 +1,13 @@
 # VideoTogether
 
-> [简体中文](./README_zh.md)
+<img src="./assets/img/image.png" alt="VideoTogether Banner" width="760" />
+
+<p align="center">
+  <a href="https://github.com/TenofHearts/VideoTogether/releases"><img src="https://img.shields.io/badge/release-v1.4.0-orange" alt="GitHub release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue
+  " alt="MIT License"></a>
+  <a href="README_zh.md"><img src="https://img.shields.io/badge/Language-%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-green"></a>
+</p>
 
 VideoTogether is a private movie sharing project designed for two people in the same LAN.
 
@@ -51,8 +58,8 @@ infra/
 You can install VideoTogether directly on Windows:
 1. Download the latest Windows installer (`.exe`) from the [Releases](https://github.com/TenofHearts/VideoTogether/releases) page.
 2. Run the installer and follow the instructions.
-3. Configure your ip in `.env.example`
-4. Launch VideoTogether from your Start menu.
+3. ~~Configure your ip in `.env.example`~~ Launch the app and configure your `LAN IP`
+4. Start watching videos with your friends!
 
 ### IP configuation
 
@@ -76,7 +83,7 @@ Ethernet adapter Ethernet:
                                        10.x.x.x
 ```
 
-You need to copy the IPv4 address, and paste it into `.env.example`: 
+You need to copy the IPv4 address, and ~~paste it into `.env.example`~~ enter it into the `LAN IP` text box: 
 
 ```env
 ...
