@@ -2040,6 +2040,11 @@ export default function App() {
     function renderCurrentMovieSection() {
         return (
             <section className="surfacePanel monitorCurrentMovie">
+                {monitoringTarget && (
+                    <span className={`mediaQueueBadge monitorCornerBadge ${monitoringTarget.status}`}>
+                        {monitoringStatusText}
+                    </span>
+                )}
                 <div className="sectionHeader">
                     <div>
                         <p className="sectionEyebrow">Current Movie</p>
@@ -2048,11 +2053,6 @@ export default function App() {
                                 'No monitoring target selected'}
                         </h2>
                     </div>
-                    {monitoringTarget && (
-                        <span className={`mediaQueueBadge ${monitoringTarget.status}`}>
-                            {monitoringStatusText}
-                        </span>
-                    )}
                 </div>
 
                 {monitoringTarget ? (

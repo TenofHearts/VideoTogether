@@ -593,6 +593,17 @@ p {
     word-break: break-word;
 }
 
+.monitorCurrentMovie {
+    position: relative;
+}
+
+.monitorCornerBadge {
+    position: absolute;
+    top: 22px;
+    right: 22px;
+    z-index: 1;
+}
+
 .statusLabel,
 .metricLabel,
 .fieldLabel,
