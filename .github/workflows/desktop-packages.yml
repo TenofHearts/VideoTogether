@@ -1,0 +1,76 @@
+name: Desktop Packages
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  windows-x64:
+    name: Build Windows x64 Installer
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install FFmpeg
+        run: choco install ffmpeg -y
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop package
+        run: npm run package:desktop -- --target x86_64-pc-windows-msvc --bundles nsis
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-x64
+          path: apps/desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*
+
+  macos-arm64:
+    name: Build macOS arm64 Package
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install FFmpeg
+        run: brew install ffmpeg
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build desktop package
+        run: npm run package:desktop -- --target aarch64-apple-darwin --bundles dmg
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos-arm64
+          path: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*

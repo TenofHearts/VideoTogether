@@ -23,7 +23,9 @@ const bundlePath = resolve(seaRoot, 'server-bundle.cjs');
 const blobPath = resolve(seaRoot, 'server.blob');
 const configPath = resolve(seaRoot, 'sea-config.json');
 const manifestPath = resolve(seaRoot, 'sea-assets.json');
-const outputExecutablePath = resolve(releaseRoot, 'videoshare-server.exe');
+const outputExecutableName =
+  process.platform === 'win32' ? 'videoshare-server.exe' : 'videoshare-server';
+const outputExecutablePath = resolve(releaseRoot, outputExecutableName);
 const postjectExecutablePath = resolve(
   workspaceRoot,
   'node_modules',

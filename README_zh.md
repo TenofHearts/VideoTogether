@@ -295,7 +295,7 @@ npm run dev:desktop
   - 停止由 `host:start` 拉起的后台 server 进程树
 - `npm run host:start -- -SkipDesktop`
   - 只启动本地主机 server，不打开桌面端
-- `npm run desktop:package`
+- `npm run package:desktop`
   - 构建 Tauri 桌面端安装包
 - `npm run dev:server`
   - 以开发 watch 模式运行 Fastify server

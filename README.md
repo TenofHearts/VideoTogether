@@ -294,7 +294,7 @@ Default development endpoints:
   - stops the background server process tree started by `host:start`
 - `npm run host:start -- -SkipDesktop`
   - starts the local host server only, without launching the desktop app
-- `npm run desktop:package`
+- `npm run package:desktop`
   - builds the Tauri desktop installer bundles
 - `npm run dev:server`
   - runs the Fastify server in development watch mode
