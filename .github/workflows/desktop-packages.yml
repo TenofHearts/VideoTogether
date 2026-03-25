@@ -76,4 +76,4 @@ jobs:
         uses: actions/upload-artifact@v5
         with:
           name: desktop-macos-arm64
-          path: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*
+          path: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
