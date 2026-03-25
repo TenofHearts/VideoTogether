@@ -439,8 +439,6 @@ fn set_lan_ip(lan_ip: String) -> Result<(), String> {
 #[cfg(not(debug_assertions))]
 const SERVER_HOST: &str = "0.0.0.0";
 #[cfg(not(debug_assertions))]
-const SERVER_PORT: &str = "3000";
-#[cfg(not(debug_assertions))]
 const SERVER_SIDECAR_NAME: &str = "server";
 #[cfg(not(debug_assertions))]
 const FFMPEG_SIDECAR_NAME: &str = "ffmpeg";
