@@ -1,6 +1,6 @@
 [package]
 name = "VideoTogether"
-version = "1.4.0"
+version = "1.4.1"
 description = "VideoTogether desktop shell"
 authors = ["ASUS"]
 edition = "2021"
