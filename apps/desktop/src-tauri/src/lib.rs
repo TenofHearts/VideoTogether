@@ -83,7 +83,10 @@ struct ReleaseSystemStatus {
 }
 
 #[cfg(not(debug_assertions))]
-const DEFAULT_ENV_TEMPLATE: &str = include_str!("../../../../.env.example");
+const DEFAULT_ENV_TEMPLATE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../.env.example"
+));
 #[cfg(not(debug_assertions))]
 const RUNTIME_ENV_OVERRIDE_FILE_NAME: &str = ".env";
 #[cfg(not(debug_assertions))]
@@ -134,31 +137,16 @@ fn parse_workspace_env_file(contents: &str) -> std::collections::HashMap<String,
 }
 
 #[cfg(debug_assertions)]
-fn find_workspace_root(start_directory: &std::path::Path) -> Option<std::path::PathBuf> {
-    let mut candidate = start_directory.to_path_buf();
+fn resolve_workspace_root() -> std::path::PathBuf {
+    // Resolve from Cargo manifest directory to avoid cwd-dependent path behavior.
+    let workspace_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
 
-    loop {
-        if candidate.join("apps").join("server").join("package.json").is_file()
-            && candidate.join("apps").join("web").join("package.json").is_file()
-        {
-            return Some(candidate);
-        }
-
-        if !candidate.pop() {
-            return None;
-        }
-    }
+    std::fs::canonicalize(&workspace_root).unwrap_or(workspace_root)
 }
 
 #[cfg(debug_assertions)]
 fn read_workspace_env_file() -> std::collections::HashMap<String, String> {
-    let Ok(current_directory) = std::env::current_dir() else {
-        return std::collections::HashMap::new();
-    };
-
-    let Some(workspace_root) = find_workspace_root(&current_directory) else {
-        return std::collections::HashMap::new();
-    };
+    let workspace_root = resolve_workspace_root();
 
     for file_name in [".env", ".env.example"] {
         let candidate = workspace_root.join(file_name);
@@ -380,10 +368,7 @@ fn write_env_value(path: &std::path::Path, key: &str, value: &str) -> Result<(),
 
 #[cfg(debug_assertions)]
 fn resolve_lan_ip_env_path() -> Result<std::path::PathBuf, String> {
-    let current_directory = std::env::current_dir()
-        .map_err(|error| format!("failed to resolve current directory: {error}"))?;
-    let workspace_root = find_workspace_root(&current_directory)
-        .ok_or_else(|| "failed to locate workspace root".to_string())?;
+    let workspace_root = resolve_workspace_root();
     let env_override_path = workspace_root.join(".env");
 
     if env_override_path.is_file() {
