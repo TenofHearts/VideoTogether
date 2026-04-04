@@ -360,7 +360,7 @@ export default function App() {
     const hostRoomPlayerUrl =
         room && status && hostParticipant
             ? buildParticipantRoomUrl(
-                status.webUrl,
+                status.lanWebUrl ?? status.webUrl,
                 room.room.token,
                 hostParticipant.id,
                 hostParticipant.displayName
@@ -426,9 +426,9 @@ export default function App() {
 
         if (hostRoomPlayerUrl) {
             shareLinks.push({
-                label: 'Local host URL',
+                label: 'LAN host URL',
                 value: hostRoomPlayerUrl,
-                buttonLabel: 'Copy local host URL'
+                buttonLabel: 'Copy LAN host URL'
             });
         }
     }
