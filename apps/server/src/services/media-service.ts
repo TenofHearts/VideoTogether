@@ -83,12 +83,18 @@ type ProbeResult = {
   format?: ProbeFormat;
 };
 
+type RunCommandOptions = {
+  onStderr?: (chunk: string) => void;
+};
+
 const supportedSubtitleExtensions = new Set(['.srt', '.vtt', '.ass']);
 const HLS_SEGMENT_DURATION_SECONDS = 4;
 const HLS_MAX_VIDEO_BITRATE = '4500k';
 const HLS_BUFFER_SIZE = '9000k';
+const INTERRUPTED_PROCESSING_MESSAGE =
+  'Media processing was interrupted before FFmpeg completed. Retry processing to rebuild the full HLS stream.';
 
-function mapMedia(row: MediaRow): Media {
+function mapMedia(row: MediaRow, processingProgressPercent: number | null = null): Media {
   return {
     id: row.id,
     originalFileName: row.original_file_name,
@@ -101,6 +107,7 @@ function mapMedia(row: MediaRow): Media {
     height: row.height,
     hlsManifestPath: row.hls_manifest_path,
     processingError: row.processing_error,
+    processingProgressPercent,
     status: row.status,
     createdAt: row.created_at
   };
@@ -202,7 +209,32 @@ function createSubtitleUrl(publicBaseUrl: string, subtitleId: string): string {
   return buildUrlFromBase(publicBaseUrl, `subtitles/${subtitleId}.vtt`);
 }
 
-async function runCommand(command: string, args: string[]): Promise<string> {
+function parseFfmpegProgressTimeMs(progressOutput: string): number | null {
+  const outTimeMsMatch = progressOutput.match(/(?:^|\n)out_time_ms=(\d+)/);
+
+  if (outTimeMsMatch) {
+    return Math.floor(Number(outTimeMsMatch[1]) / 1000);
+  }
+
+  const outTimeMatch = progressOutput.match(
+    /(?:^|\n)out_time=(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)/
+  );
+
+  if (!outTimeMatch) {
+    return null;
+  }
+
+  const [, hours, minutes, seconds] = outTimeMatch;
+  return Math.round(
+    (Number(hours) * 3600 + Number(minutes) * 60 + Number(seconds)) * 1000
+  );
+}
+
+async function runCommand(
+  command: string,
+  args: string[],
+  options: RunCommandOptions = {}
+): Promise<string> {
   return new Promise((resolveCommand, rejectCommand) => {
     const child = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe']
@@ -216,21 +248,28 @@ async function runCommand(command: string, args: string[]): Promise<string> {
     });
 
     child.stderr?.on('data', (chunk: Buffer | string) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      options.onStderr?.(text);
     });
 
     child.on('error', (error) => {
       rejectCommand(error);
     });
 
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       if (code === 0) {
         resolveCommand(stdout);
         return;
       }
 
       rejectCommand(
-        new Error(stderr.trim() || `${command} exited with code ${code ?? 1}`)
+        new Error(
+          stderr.trim() ||
+            `${command} exited with ${
+              signal ? `signal ${signal}` : `code ${code ?? 1}`
+            }`
+        )
       );
     });
   });
@@ -271,6 +310,7 @@ export type MediaService = ReturnType<typeof createMediaService>;
 
 export function createMediaService(database: DatabaseContext, env: AppEnv) {
   const activeProcessingJobs = new Map<string, Promise<void>>();
+  const processingProgressByMediaId = new Map<string, number>();
   const getMediaStatement = database.connection.prepare(`
     SELECT
       id,
@@ -395,10 +435,22 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     WHERE id = ?
   `);
 
+  const markInterruptedProcessingStatement = database.connection.prepare(`
+    UPDATE media
+    SET
+      status = 'error',
+      hls_manifest_path = null,
+      hls_generated_at = null,
+      processing_error = ?
+    WHERE status = 'processing'
+  `);
+
   const deleteMediaStatement = database.connection.prepare(`
     DELETE FROM media
     WHERE id = ?
   `);
+
+  markInterruptedProcessingStatement.run(INTERRUPTED_PROCESSING_MESSAGE);
 
   async function probeMedia(media: Media) {
     const output = await runCommand(env.mediaProcessing.ffprobePath, [
@@ -443,9 +495,11 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
     }
 
     updateMediaStatusStatement.run('processing', null, null, null, mediaId);
+    processingProgressByMediaId.set(mediaId, 0);
 
     try {
       await probeMedia(media);
+      processingProgressByMediaId.set(mediaId, 1);
 
       const outputDirectory = resolve(env.storage.hlsDir, mediaId);
       rmSync(outputDirectory, {
@@ -453,9 +507,23 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         force: true
       });
       mkdirSync(outputDirectory, { recursive: true });
+      updateMediaStatusStatement.run(
+        'processing',
+        'master.m3u8',
+        null,
+        null,
+        mediaId
+      );
+
+      const probedMedia = service.getMediaById(mediaId);
+      const durationMs = probedMedia?.durationMs ?? null;
+      let progressBuffer = '';
 
       await runCommand(env.mediaProcessing.ffmpegPath, [
         '-y',
+        '-progress',
+        'pipe:2',
+        '-nostats',
         '-i',
         media.sourcePath,
         '-map',
@@ -494,13 +562,34 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         '-hls_list_size',
         '0',
         '-hls_playlist_type',
-        'vod',
+        'event',
         '-hls_flags',
         'independent_segments',
         '-hls_segment_filename',
         resolve(outputDirectory, 'segment-%03d.ts'),
         resolve(outputDirectory, 'master.m3u8')
-      ]);
+      ], {
+        onStderr(chunk) {
+          if (!durationMs || durationMs <= 0) {
+            return;
+          }
+
+          progressBuffer = `${progressBuffer}${chunk}`;
+          const outTimeMs = parseFfmpegProgressTimeMs(progressBuffer);
+
+          if (outTimeMs === null) {
+            progressBuffer = progressBuffer.slice(-512);
+            return;
+          }
+
+          const nextProgress = Math.max(
+            1,
+            Math.min(99, Math.floor((outTimeMs / durationMs) * 100))
+          );
+          processingProgressByMediaId.set(mediaId, nextProgress);
+          progressBuffer = progressBuffer.slice(-512);
+        }
+      });
 
       updateMediaStatusStatement.run(
         'ready',
@@ -509,6 +598,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         null,
         mediaId
       );
+      processingProgressByMediaId.set(mediaId, 100);
     } catch (error) {
       updateMediaStatusStatement.run(
         'error',
@@ -517,6 +607,7 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
         toProcessingErrorMessage(error),
         mediaId
       );
+      processingProgressByMediaId.delete(mediaId);
     }
   }
 
@@ -564,14 +655,28 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
       const rows = listMediaStatement.all(limit) as MediaRow[];
 
       return {
-        media: rows.map((row) => mapMedia(row))
+        media: rows.map((row) =>
+          mapMedia(
+            row,
+            row.status === 'ready'
+              ? 100
+              : processingProgressByMediaId.get(row.id) ?? null
+          )
+        )
       };
     },
 
     getMediaById(mediaId: string): Media | null {
       const row = getMediaStatement.get(mediaId) as MediaRow | undefined;
 
-      return row ? mapMedia(row) : null;
+      return row
+        ? mapMedia(
+            row,
+            row.status === 'ready'
+              ? 100
+              : processingProgressByMediaId.get(row.id) ?? null
+          )
+        : null;
     },
 
     getSubtitleById(subtitleId: string): Subtitle | null {
@@ -717,6 +822,11 @@ export function createMediaService(database: DatabaseContext, env: AppEnv) {
 
       const processingJob = processMediaRecord(mediaId).finally(() => {
         activeProcessingJobs.delete(mediaId);
+        const media = service.getMediaById(mediaId);
+
+        if (media?.status !== 'ready') {
+          processingProgressByMediaId.delete(mediaId);
+        }
       });
 
       activeProcessingJobs.set(mediaId, processingJob);

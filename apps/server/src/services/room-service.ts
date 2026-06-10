@@ -480,7 +480,7 @@ export function createRoomService(
     };
   }
 
-  function requireReadyMediaForPlayback(room: Room) {
+  function requirePlayableMediaForPlayback(room: Room) {
     if (!room.activeMediaId) {
       throw new HttpError(409, 'Room has no active media');
     }
@@ -491,7 +491,10 @@ export function createRoomService(
       throw new HttpError(404, 'Room media not found');
     }
 
-    if (media.status !== 'ready' || !media.hlsManifestPath) {
+    if (
+      (media.status !== 'processing' && media.status !== 'ready') ||
+      !media.hlsManifestPath
+    ) {
       throw new HttpError(
         409,
         'Room media is not ready for synchronized playback'
@@ -593,7 +596,7 @@ export function createRoomService(
     const room = getValidatedRoom(token);
     const participant = requireParticipantForRoom(participantId, room.id);
 
-    requireReadyMediaForPlayback(room);
+    requirePlayableMediaForPlayback(room);
 
     const now = new Date().toISOString();
     const playbackRate =
@@ -871,7 +874,7 @@ export function createRoomService(
       const room = getValidatedRoom(token);
       const participant = requireParticipantForRoom(participantId, room.id);
 
-      requireReadyMediaForPlayback(room);
+      requirePlayableMediaForPlayback(room);
 
       const durationSeconds = getRoomDurationSeconds(room);
       const reportedTime = clampPlaybackTime(

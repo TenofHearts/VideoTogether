@@ -43,7 +43,12 @@ export async function registerStaticRoutes(
       request.params.mediaId
     );
 
-    if (!media || media.status !== 'ready' || !media.hlsManifestPath) {
+    const canServeProgressiveMedia =
+      media &&
+      (media.status === 'processing' || media.status === 'ready') &&
+      media.hlsManifestPath;
+
+    if (!canServeProgressiveMedia) {
       throw new HttpError(404, 'Media not found');
     }
 
@@ -58,7 +63,12 @@ export async function registerStaticRoutes(
       throw new HttpError(400, 'Invalid media asset path');
     }
 
-    return streamFile(reply, filePath);
+    const cacheControl =
+      media.status === 'processing' && extname(assetPath).toLowerCase() === '.m3u8'
+        ? 'no-store'
+        : undefined;
+
+    return streamFile(reply, filePath, { cacheControl });
   });
 
   app.get<{

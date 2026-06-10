@@ -91,7 +91,13 @@ export function resolveSafeChildPath(
     return resolvedPath;
 }
 
-export async function streamFile(reply: FastifyReply, filePath: string) {
+export async function streamFile(
+    reply: FastifyReply,
+    filePath: string,
+    options?: {
+        cacheControl?: string;
+    }
+) {
     if (!existsSync(filePath)) {
         return reply.status(404).send({
             message: 'Asset not found'
@@ -105,7 +111,7 @@ export async function streamFile(reply: FastifyReply, filePath: string) {
             message: 'Asset not found'
         });
     }
-    reply.header('Cache-Control', getCacheControl(filePath));
+    reply.header('Cache-Control', options?.cacheControl ?? getCacheControl(filePath));
     reply.header('Content-Length', String(fileStats.size));
     reply.type(getContentType(filePath));
 

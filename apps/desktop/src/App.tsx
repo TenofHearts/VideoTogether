@@ -146,6 +146,13 @@ function getStatusText(status: Media['status']): string {
     }
 }
 
+function isMediaPlayable(media: Media | null): boolean {
+    return Boolean(
+        media?.hlsManifestPath &&
+        (media.status === 'processing' || media.status === 'ready')
+    );
+}
+
 function buildRoomPlayerUrl(baseUrl: string, token: string): string {
     const url = new URL(baseUrl);
     const normalizedPath = url.pathname.endsWith('/')
@@ -228,10 +235,14 @@ function getProcessingSteps(media: Media | null): ProcessingStep[] {
                     state: 'active'
                 },
                 {
-                    label: 'Ready for rooms',
+                    label: media.hlsManifestPath
+                        ? 'Progressive stream ready'
+                        : 'Preparing stream',
                     description:
-                        'Room creation stays enabled after processing completes.',
-                    state: 'pending'
+                        media.hlsManifestPath
+                            ? 'You can create a room while FFmpeg continues writing later segments.'
+                            : 'Room creation unlocks after the first HLS manifest is available.',
+                    state: media.hlsManifestPath ? 'complete' : 'pending'
                 }
             ];
         case 'ready':
@@ -396,13 +407,14 @@ export default function App() {
     const monitoringStatusText = monitoringTarget
         ? getStatusText(monitoringTarget.status)
         : 'No target selected';
+    const selectedMediaPlayable = isMediaPlayable(media);
     const normalizedLanIpInput = lanIpInput.trim();
     const configuredLanIp = status?.lanIp?.trim() ?? '';
     const effectiveLanIp = normalizedLanIpInput || configuredLanIp;
     const hasPendingLanIpChange =
         normalizedLanIpInput.length > 0 && normalizedLanIpInput !== configuredLanIp;
     const createRoomBlockedByLanIp =
-        media?.status === 'ready' &&
+        selectedMediaPlayable &&
         roomState !== 'working' &&
         effectiveLanIp.length === 0;
     const storageFolderPath =
@@ -689,6 +701,25 @@ export default function App() {
     }, [status]);
 
     useEffect(() => {
+        if (
+            !status ||
+            !recentMedia.data.some(
+                (item) => item.status === 'pending' || item.status === 'processing'
+            )
+        ) {
+            return;
+        }
+
+        const timer = window.setInterval(() => {
+            void refreshRecentMedia();
+        }, 2500);
+
+        return () => {
+            window.clearInterval(timer);
+        };
+    }, [recentMedia.data, status]);
+
+    useEffect(() => {
         if (!status) {
             return;
         }
@@ -786,6 +817,16 @@ export default function App() {
                     setMonitoringMedia((current) =>
                         current?.id === nextMedia.id ? nextMedia : current
                     );
+
+                    if (
+                        nextMedia.status === 'processing' &&
+                        nextMedia.hlsManifestPath &&
+                        !media.hlsManifestPath
+                    ) {
+                        setMessage(
+                            'Progressive HLS output is available. You can create a room while processing continues.'
+                        );
+                    }
 
                     if (nextMedia.status === 'ready') {
                         setUploadState('success');
@@ -1173,6 +1214,13 @@ export default function App() {
             return;
         }
 
+        if (!isMediaPlayable(media)) {
+            setRoomState('error');
+            setError('Wait until the progressive HLS stream is available before creating a room.');
+            setMessage(null);
+            return;
+        }
+
         const manualLanIp = normalizedLanIpInput;
         const existingLanIp = configuredLanIp;
 
@@ -1551,6 +1599,34 @@ export default function App() {
                                 <p className="mediaQueueMeta">
                                     Duration {formatDuration(item.durationMs)}
                                 </p>
+                                {(item.status === 'pending' ||
+                                    item.status === 'processing') && (() => {
+                                        const progressPercent =
+                                            item.processingProgressPercent ?? 0;
+
+                                        return (
+                                            <div className="mediaProcessingProgressGroup">
+                                                <div
+                                                    aria-label={`${getStatusText(item.status)} progress`}
+                                                    aria-valuemax={100}
+                                                    aria-valuemin={0}
+                                                    aria-valuenow={progressPercent}
+                                                    className="mediaProcessingProgress"
+                                                    role="progressbar"
+                                                >
+                                                    <span
+                                                        className="mediaProcessingProgressBar"
+                                                        style={{
+                                                            width: `${progressPercent}%`
+                                                        }}
+                                                    />
+                                                </div>
+                                                <span className="mediaProcessingProgressValue">
+                                                    {progressPercent}%
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
                             </button>
                         ))}
                     </div>
@@ -1915,7 +1991,7 @@ export default function App() {
                             <button
                                 className="successButton"
                                 disabled={
-                                    media.status !== 'ready' || roomState === 'working'
+                                    !selectedMediaPlayable || roomState === 'working'
                                 }
                                 onClick={() => {
                                     if (createRoomBlockedByLanIp) {
@@ -1966,9 +2042,9 @@ export default function App() {
                             )}
                         </div>
 
-                        {media.status !== 'ready' && (
+                        {!selectedMediaPlayable && (
                             <div className="emptyState">
-                                Finish media processing before creating a room.
+                                Wait for the first HLS manifest before creating a room.
                             </div>
                         )}
 

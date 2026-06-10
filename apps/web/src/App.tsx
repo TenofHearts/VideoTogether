@@ -1312,10 +1312,13 @@ export default function App() {
             return teardownListeners;
         }
 
-        if (playbackMedia.status !== 'ready') {
+        if (
+            playbackMedia.status !== 'processing' &&
+            playbackMedia.status !== 'ready'
+        ) {
             cleanup();
             setPlayerState('loading');
-            setPlayerMessage('Manifest will appear after processing completes.');
+            setPlayerMessage('Stream will start as soon as processed segments are available.');
             return () => {
                 cleanup();
                 teardownListeners();
@@ -1334,7 +1337,11 @@ export default function App() {
 
         if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = manifestUrl;
-            setPlayerMessage('Connecting through native HLS playback.');
+            setPlayerMessage(
+                playbackMedia.status === 'processing'
+                    ? 'Connecting to the growing HLS stream.'
+                    : 'Connecting through native HLS playback.'
+            );
             return () => {
                 cleanup();
                 teardownListeners();
@@ -1355,15 +1362,28 @@ export default function App() {
                 const hls = new Hls({
                     enableWorker: true,
                     lowLatencyMode: false,
+                    startPosition: 0,
+                    initialLiveManifestSize: 1,
+                    liveSyncMode: 'buffered',
                     backBufferLength: 90,
                     maxBufferLength: 60,
-                    maxMaxBufferLength: 120
+                    maxMaxBufferLength: 120,
+                    manifestLoadingMaxRetry: 12,
+                    manifestLoadingRetryDelay: 1000,
+                    levelLoadingMaxRetry: 12,
+                    levelLoadingRetryDelay: 1000,
+                    fragLoadingMaxRetry: 12,
+                    fragLoadingRetryDelay: 1000
                 });
                 hls.loadSource(manifestUrl);
                 hls.attachMedia(video);
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
                     setPlayerState('ready');
-                    setPlayerMessage('HLS manifest loaded.');
+                    setPlayerMessage(
+                        playbackMedia.status === 'processing'
+                            ? 'Progressive HLS stream loaded.'
+                            : 'HLS manifest loaded.'
+                    );
                 });
                 hls.on(Hls.Events.ERROR, (_eventName: unknown, rawData: unknown) => {
                     const data = rawData as HlsErrorData;
@@ -1420,8 +1440,22 @@ export default function App() {
         canPlayMedia,
         route.kind,
         playbackMedia?.id ?? 'idle',
-        playbackMedia?.status ?? 'missing',
         playbackMedia?.hlsManifestPath ?? 'none'
+    ]);
+
+    useEffect(() => {
+        if (
+            playbackMedia?.status === 'ready' &&
+            playbackMedia.hlsManifestPath &&
+            playerState === 'ready'
+        ) {
+            setPlayerMessage('HLS processing finished. Playback will continue uninterrupted.');
+        }
+    }, [
+        playbackMedia?.id ?? 'idle',
+        playbackMedia?.status ?? 'missing',
+        playbackMedia?.hlsManifestPath ?? 'none',
+        playerState
     ]);
 
     useEffect(() => {

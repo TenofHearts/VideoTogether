@@ -92,6 +92,7 @@ export type Media = {
     height: number | null;
     hlsManifestPath: string | null;
     processingError: string | null;
+    processingProgressPercent: number | null;
     status: MediaStatus;
     createdAt: string;
 };
