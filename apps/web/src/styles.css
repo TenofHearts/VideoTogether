@@ -85,88 +85,13 @@ video {
     max-height: calc(100vh - 104px);
 }
 
-.videoControls {
-    display: grid;
-    gap: 12px;
-    padding: 12px 4px 4px;
-    color: #fff8f4;
-}
-
-.videoProgressRow,
-.videoButtonRow {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
-}
-
-.videoProgress {
-    flex: 1 1 auto;
-    min-width: 80px;
-}
-
-.videoTime {
-    flex: 0 0 auto;
-    min-width: 46px;
-    font-variant-numeric: tabular-nums;
-    font-size: 0.78rem;
-    color: rgba(255, 248, 244, 0.86);
-    text-align: center;
-}
-
-.videoButtonRow {
-    flex-wrap: wrap;
-}
-
-.videoControlButton {
-    min-height: 36px;
-    border: 1px solid rgba(255, 248, 244, 0.24);
-    border-radius: 999px;
-    padding: 8px 12px;
-    background: rgba(255, 248, 244, 0.08);
-    color: #fff8f4;
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-
-.videoControlButton:focus-visible,
-.videoRange:focus-visible {
-    outline: 2px solid rgba(109, 223, 145, 0.82);
-    outline-offset: 2px;
-}
-
-.videoVolumeControl {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-width: 180px;
-    flex: 1 1 220px;
-    color: rgba(255, 248, 244, 0.86);
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-
-.videoVolume {
-    flex: 1 1 120px;
-    min-width: 96px;
-}
-
-.videoRange {
-    accent-color: #6ddf91;
+.nativeVideoPlayer {
+    min-height: 220px;
 }
 
 @media (max-width: 640px) {
-    .videoProgressRow,
-    .videoButtonRow {
-        gap: 8px;
-    }
-
-    .videoVolumeControl {
-        min-width: 100%;
-    }
-
-    .videoControlButton {
-        flex: 1 1 auto;
+    .nativeVideoPlayer {
+        min-height: 190px;
     }
 }
 
