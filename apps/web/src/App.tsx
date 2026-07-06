@@ -417,8 +417,16 @@ export default function App() {
     const [realtimeLatencyMs, setRealtimeLatencyMs] = useState<number | null>(null);
     const [playbackBufferSeconds, setPlaybackBufferSeconds] = useState<number | null>(null);
     const [playbackRateLive, setPlaybackRateLive] = useState<number | null>(null);
+    const [playbackCurrentTime, setPlaybackCurrentTime] = useState(0);
+    const [playbackDurationSeconds, setPlaybackDurationSeconds] = useState<number | null>(null);
+    const [playbackVolume, setPlaybackVolume] = useState(1);
+    const [isPlaybackMuted, setIsPlaybackMuted] = useState(false);
+    const [isPlaybackPaused, setIsPlaybackPaused] = useState(true);
+    const [isFullscreenActive, setIsFullscreenActive] = useState(false);
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    const videoFrameRef = useRef<HTMLDivElement | null>(null);
     const socketRef = useRef<Socket | null>(null);
+    const currentRoomRef = useRef<Room | null>(null);
     const autoJoinTokenRef = useRef<string | null>(null);
     const softResyncTimerRef = useRef<number | null>(null);
     const suppressedPlaybackEventsRef = useRef({
@@ -429,6 +437,11 @@ export default function App() {
     const lastAppliedPlaybackSignatureRef = useRef<string | null>(null);
     const roomToken = route.kind === 'room' ? route.token : null;
     const mediaId = route.kind === 'home' ? route.mediaId : null;
+
+    useEffect(() => {
+        currentRoomRef.current =
+            roomState.kind === 'success' ? roomState.data.room : null;
+    }, [roomState.kind === 'success' ? getPlaybackSignature(roomState.data.room) : 'idle']);
 
     function suppressNextPlaybackEvent(eventName: 'play' | 'pause' | 'seek') {
         suppressedPlaybackEventsRef.current[eventName] += 1;
@@ -563,6 +576,15 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        function handleFullscreenChange() {
+            setIsFullscreenActive(document.fullscreenElement === videoFrameRef.current);
+        }
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    useEffect(() => {
         let cancelled = false;
 
         async function measureRealtimeLatency() {
@@ -615,6 +637,12 @@ export default function App() {
             const currentTime = Number.isFinite(video.currentTime)
                 ? video.currentTime
                 : 0;
+            const duration =
+                Number.isFinite(video.duration) && video.duration > 0
+                    ? video.duration
+                    : playbackMedia?.durationMs && playbackMedia.durationMs > 0
+                        ? playbackMedia.durationMs / 1000
+                        : null;
             const playbackRate = Number.isFinite(video.playbackRate)
                 ? Number(video.playbackRate.toFixed(2))
                 : null;
@@ -630,7 +658,12 @@ export default function App() {
                 }
             }
 
+            setPlaybackCurrentTime(currentTime);
+            setPlaybackDurationSeconds(duration);
             setPlaybackRateLive(playbackRate);
+            setPlaybackVolume(video.volume);
+            setIsPlaybackMuted(video.muted);
+            setIsPlaybackPaused(video.paused);
             setPlaybackBufferSeconds(
                 bufferAhead === null ? null : Number(bufferAhead.toFixed(1))
             );
@@ -639,10 +672,12 @@ export default function App() {
         updatePlaybackMetrics();
 
         const eventNames = [
+            'durationchange',
             'timeupdate',
             'progress',
             'ratechange',
             'loadedmetadata',
+            'volumechange',
             'playing',
             'seeking',
             'seeked',
@@ -1124,7 +1159,11 @@ export default function App() {
             return;
         }
 
-        const signature = getPlaybackSignature(roomState.data.room);
+        const signature = [
+            getPlaybackSignature(roomState.data.room),
+            playbackMedia?.id ?? 'no-media',
+            playerState
+        ].join(':');
 
         if (lastAppliedPlaybackSignatureRef.current === signature) {
             return;
@@ -1134,6 +1173,8 @@ export default function App() {
         applyPlaybackRoom(roomState.data.room, { mode: 'hard' });
     }, [
         joinState.kind,
+        playbackMedia?.id ?? 'idle',
+        playerState,
         roomState.kind === 'success' ? roomState.data.room.currentPlaybackTime : -1,
         roomState.kind === 'success' ? roomState.data.room.playbackRate : -1,
         roomState.kind === 'success' ? roomState.data.room.playbackState : 'paused',
@@ -1248,10 +1289,16 @@ export default function App() {
         const handleCanPlay = () => {
             setPlayerState('ready');
             setPlayerMessage('Playback is ready.');
+            if (route.kind === 'room' && currentRoomRef.current) {
+                applyPlaybackRoom(currentRoomRef.current, { mode: 'hard' });
+            }
         };
         const handlePlaying = () => {
             setPlayerState('ready');
             setPlayerMessage('Playback is running.');
+            if (route.kind === 'room' && currentRoomRef.current) {
+                applyPlaybackRoom(currentRoomRef.current, { mode: 'hard' });
+            }
         };
         const handleSeeking = () => {
             setPlayerState('seeking');
@@ -1384,6 +1431,9 @@ export default function App() {
                             ? 'Progressive HLS stream loaded.'
                             : 'HLS manifest loaded.'
                     );
+                    if (route.kind === 'room' && currentRoomRef.current) {
+                        applyPlaybackRoom(currentRoomRef.current, { mode: 'hard' });
+                    }
                 });
                 hls.on(Hls.Events.ERROR, (_eventName: unknown, rawData: unknown) => {
                     const data = rawData as HlsErrorData;
@@ -1525,6 +1575,14 @@ export default function App() {
     const manifestUrl = playbackMedia ? getManifestUrl(playbackMedia) : null;
     const currentRoom = roomState.kind === 'success' ? roomState.data : null;
     const appVersion = import.meta.env.APP_VERSION || '0.0.0-dev';
+    const visiblePlaybackDuration =
+        playbackDurationSeconds ??
+        (playbackMedia?.durationMs && playbackMedia.durationMs > 0
+            ? playbackMedia.durationMs / 1000
+            : null);
+    const progressMax = visiblePlaybackDuration ?? 0;
+    const progressValue =
+        progressMax > 0 ? Math.min(playbackCurrentTime, progressMax) : 0;
 
     async function joinRoom(
         displayName: string,
@@ -1650,6 +1708,78 @@ export default function App() {
         setRealtimeRetryNonce((current) => current + 1);
     }
 
+    function formatPlaybackClock(seconds: number | null): string {
+        if (seconds === null || !Number.isFinite(seconds) || seconds < 0) {
+            return '--:--';
+        }
+
+        const roundedSeconds = Math.floor(seconds);
+        const hours = Math.floor(roundedSeconds / 3600);
+        const minutes = Math.floor((roundedSeconds % 3600) / 60);
+        const remainingSeconds = roundedSeconds % 60;
+
+        if (hours > 0) {
+            return [
+                hours,
+                String(minutes).padStart(2, '0'),
+                String(remainingSeconds).padStart(2, '0')
+            ].join(':');
+        }
+
+        return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+    }
+
+    function seekPlayback(nextTime: number) {
+        const video = videoRef.current;
+        if (!video || !Number.isFinite(nextTime)) {
+            return;
+        }
+
+        video.currentTime = Math.max(0, nextTime);
+        setPlaybackCurrentTime(video.currentTime);
+    }
+
+    function setPlaybackVolumeLevel(nextVolume: number) {
+        const video = videoRef.current;
+        if (!video || !Number.isFinite(nextVolume)) {
+            return;
+        }
+
+        const clampedVolume = Math.min(1, Math.max(0, nextVolume));
+        video.volume = clampedVolume;
+        video.muted = clampedVolume === 0;
+        setPlaybackVolume(clampedVolume);
+        setIsPlaybackMuted(video.muted);
+    }
+
+    function togglePlayback() {
+        const video = videoRef.current;
+        if (!video) {
+            return;
+        }
+
+        if (video.paused) {
+            void video.play();
+            return;
+        }
+
+        video.pause();
+    }
+
+    async function toggleFullscreen() {
+        const frame = videoFrameRef.current;
+        if (!frame) {
+            return;
+        }
+
+        if (document.fullscreenElement) {
+            await document.exitFullscreen().catch(() => undefined);
+            return;
+        }
+
+        await frame.requestFullscreen().catch(() => undefined);
+    }
+
     return (
         <main className="min-h-screen px-4 py-6 text-ink sm:px-6 sm:py-10">
             <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:gap-8">
@@ -1738,14 +1868,84 @@ export default function App() {
 
                                 {playbackMedia && canPlayMedia ? (
                                     <>
-                                        <div className="rounded-[1.5rem] bg-slate-950 p-2 text-white shadow-panel sm:p-4">
+                                        <div
+                                            className="videoFrame rounded-[1.5rem] bg-slate-950 p-2 text-white shadow-panel sm:p-4"
+                                            ref={videoFrameRef}
+                                        >
                                             <video
                                                 className="aspect-video w-full rounded-[1.25rem] bg-black object-contain"
-                                                controls
                                                 crossOrigin="anonymous"
                                                 preload="auto"
                                                 ref={videoRef}
                                             />
+                                            <div className="videoControls" aria-label="Video playback controls">
+                                                <div className="videoProgressRow">
+                                                    <span className="videoTime">
+                                                        {formatPlaybackClock(playbackCurrentTime)}
+                                                    </span>
+                                                    <input
+                                                        aria-label="Playback progress"
+                                                        className="videoRange videoProgress"
+                                                        disabled={progressMax <= 0}
+                                                        max={progressMax || 1}
+                                                        min={0}
+                                                        onChange={(event) =>
+                                                            seekPlayback(Number(event.target.value))
+                                                        }
+                                                        step="0.1"
+                                                        type="range"
+                                                        value={progressValue}
+                                                    />
+                                                    <span className="videoTime">
+                                                        {formatPlaybackClock(visiblePlaybackDuration)}
+                                                    </span>
+                                                </div>
+                                                <div className="videoButtonRow">
+                                                    <button
+                                                        className="videoControlButton"
+                                                        onClick={togglePlayback}
+                                                        type="button"
+                                                    >
+                                                        {isPlaybackPaused ? 'Play' : 'Pause'}
+                                                    </button>
+                                                    <label className="videoVolumeControl">
+                                                        <span>{isPlaybackMuted ? 'Muted' : 'Volume'}</span>
+                                                        <input
+                                                            aria-label="Volume"
+                                                            className="videoRange videoVolume"
+                                                            max={1}
+                                                            min={0}
+                                                            onChange={(event) =>
+                                                                setPlaybackVolumeLevel(Number(event.target.value))
+                                                            }
+                                                            step="0.05"
+                                                            type="range"
+                                                            value={isPlaybackMuted ? 0 : playbackVolume}
+                                                        />
+                                                    </label>
+                                                    <button
+                                                        className="videoControlButton"
+                                                        onClick={() => {
+                                                            const video = videoRef.current;
+                                                            if (!video) {
+                                                                return;
+                                                            }
+                                                            video.muted = !video.muted;
+                                                            setIsPlaybackMuted(video.muted);
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        {isPlaybackMuted ? 'Unmute' : 'Mute'}
+                                                    </button>
+                                                    <button
+                                                        className="videoControlButton"
+                                                        onClick={() => void toggleFullscreen()}
+                                                        type="button"
+                                                    >
+                                                        {isFullscreenActive ? 'Exit Fullscreen' : 'Fullscreen'}
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
 
                                     </>
